@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"github.com/golang/groupcache/lru"
 	"log"
-	nodeproto "mini-faas/nodeservice/proto"
-	rmproto "mini-faas/resourcemanager/proto"
-	"mini-faas/scheduler/proto"
+	nodeproto "aliyun/serverless/mini-faas/nodeservice/proto"
+	rmproto "aliyun/serverless/mini-faas/resourcemanager/proto"
+	"aliyun/serverless/mini-faas/scheduler/proto"
 )
 
 var cacheSize = 1000
@@ -84,7 +84,7 @@ func PickNode(memReq int64) *rmproto.NodeDesc {
 func PickNodeFromUsed(memReq int64) *rmproto.NodeDesc {
 	// todo best fit
 	for _, node := range usedNodes {
-		if node.MemoryInMb > memReq {
+		if node.MemoryInBytes > memReq {
 			decreaseUsedNodeStats(node, memReq)
 			return node
 		}
@@ -93,17 +93,17 @@ func PickNodeFromUsed(memReq int64) *rmproto.NodeDesc {
 }
 
 func decreaseUsedNodeStats(node *rmproto.NodeDesc, usedMem int64) {
-	node.MemoryInMb = node.MemoryInMb - usedMem
+	node.MemoryInBytes = node.MemoryInBytes - usedMem
 }
 
 func increaseUsedNodeStats(node *rmproto.NodeDesc, usedMem int64) {
-	node.MemoryInMb = node.MemoryInMb + usedMem
+	node.MemoryInBytes = node.MemoryInBytes + usedMem
 }
 
 func PickNodeFromUnused(memReq int64) *rmproto.NodeDesc {
 	// todo sort before select according to mem resource
 	for i, node := range unusedNodes {
-		if node.MemoryInMb > memReq {
+		if node.MemoryInBytes > memReq {
 			unusedNodes = append(unusedNodes[:i], unusedNodes[i+1:]...)
 			return node
 		}
@@ -117,7 +117,7 @@ func FetchNodeFromRemote(memReq int64) *rmproto.NodeDesc {
 		reply, err := dep.ReserveNode(&req)
 		if err == nil {
 			rn := reply.Node
-			if rn.MemoryInMb > memReq {
+			if rn.MemoryInBytes > memReq {
 				return rn
 			} else {
 				fmt.Printf("fetched node %s 's mem is not enough", rn)

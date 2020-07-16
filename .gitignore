@@ -197,3 +197,6 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/go,windows,linux,macos,sublimetext,vim,emacs
 
 .idea/*
+#idea
+.idea
+*.iml

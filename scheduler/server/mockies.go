@@ -1,8 +1,8 @@
 package server
 
 import (
-	nodeproto "mini-faas/nodeservice/proto"
-	rmproto "mini-faas/resourcemanager/proto"
+	nodeproto "aliyun/serverless/mini-faas/nodeservice/proto"
+	rmproto "aliyun/serverless/mini-faas/resourcemanager/proto"
 )
 
 type Dep struct {
@@ -15,8 +15,9 @@ func (*Dep) ReserveNode(req *rmproto.ReserveNodeRequest) (*rmproto.ReserveNodeRe
 	node.Address = "http://"
 	node.Id = "nid" + string(nidCnt)
 	nidCnt++
-	node.MemoryInMb = 1234
-	node.ReservedTime = "100"
+	node.MemoryInBytes = 1234
+	node.ReservedTimeTimestampMs = 0
+	node.ReleasedTimeTimestampMs = 100
 	reply := rmproto.ReserveNodeReply{}
 	reply.Node = &node
 	return &reply, nil

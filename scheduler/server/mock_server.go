@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	nodeproto "mini-faas/nodeservice/proto"
-	"mini-faas/scheduler/proto"
+	nodeproto "aliyun/serverless/mini-faas/nodeservice/proto"
 )
 
 type MockServer struct {
