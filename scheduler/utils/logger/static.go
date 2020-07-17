@@ -90,7 +90,7 @@ func Criticalf(format string, v ...interface{}) {
 
 // RequestID retrieves request id from context
 func RequestID(ctx context.Context) string {
-    md, ok := metadata.FromContext(ctx)
+    md, ok := metadata.FromIncomingContext(ctx)
     if ok {
         value := md["x-acs-request-id"]
         if len(value) > 0 {

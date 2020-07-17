@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	defaultConfigFile    = "config/config.json"
-	defaultLogConfigFile = "config/log.xml"
+	defaultConfigFile    = "scheduler/config/dev/config.json"
+	defaultLogConfigFile = "scheduler/config/dev/log.xml"
 	defaultPort          = 10450
 	moduleName           = "Scheduler"
 )

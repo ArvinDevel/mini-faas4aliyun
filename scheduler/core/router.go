@@ -61,6 +61,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		cmObj, _ := containerMap.Get(key)
 		container := cmObj.(*ContainerInfo)
 		container.Lock()
+		// todo add algo trigger to async add container and async add node
 		if len(container.requests) < 1 {
 			container.requests[req.RequestId] = 1
 			res = container
@@ -123,6 +124,10 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*NodeInfo, error) {
 		}
 		node.Unlock()
 	}
+	return r.remoteGetNode(accountId)
+}
+
+func (r *Router) remoteGetNode(accountId string) (*NodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
