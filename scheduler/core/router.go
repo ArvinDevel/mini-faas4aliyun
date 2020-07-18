@@ -31,6 +31,7 @@ type Router struct {
 	nodeMap     cmap.ConcurrentMap // instance_id -> NodeInfo
 	functionMap cmap.ConcurrentMap // function_name -> ContainerMap (container_id -> ContainerInfo)
 	requestMap  cmap.ConcurrentMap // request_id -> FunctionName
+	cnt2node    cmap.ConcurrentMap // ctn_id -> NodeInfo todo release node
 	rmClient    rmPb.ResourceManagerClient
 }
 
@@ -39,6 +40,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 		nodeMap:     cmap.New(),
 		functionMap: cmap.New(),
 		requestMap:  cmap.New(),
+		cnt2node:    cmap.New(),
 		rmClient:    rmClient,
 	}
 }
@@ -102,6 +104,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		}
 		res.requests[req.RequestId] = 1 // The container hasn't been listed in the containerMap. So we don't need locking here.
 		containerMap.Set(res.id, res)
+		r.cnt2node.Set(res.id, node)
 	}
 
 	return &pb.AcquireContainerReply{
@@ -182,6 +185,7 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	delete(container.requests, res.ID)
 	container.Unlock()
 	r.requestMap.Remove(res.ID)
+	// todo clean containerMap and cnt2node
 	return nil
 }
 
