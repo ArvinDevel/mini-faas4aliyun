@@ -161,7 +161,6 @@ TODO：
 2. 后续<strike>（7月18日前）</strike>会提供本地联调，努力提供中...
 
 
-
 ## 提交线上测试
 
 为保证评测程序正常运行出分，请提交阿里云ACR镜像，仓库地域选择杭州。具体参考：https://tianchi.aliyun.com/competition/entrance/231759/tab/174
