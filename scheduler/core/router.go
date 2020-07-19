@@ -7,15 +7,12 @@ import (
 	"sync"
 	"time"
 
-	cmap "github.com/orcaman/concurrent-map"
-	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
-
-	nsPb "aliyun/serverless/mini-faas/nodeservice/proto"
 	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
 	cp "aliyun/serverless/mini-faas/scheduler/config"
 	"aliyun/serverless/mini-faas/scheduler/model"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
+	"github.com/orcaman/concurrent-map"
+	"github.com/pkg/errors"
 )
 
 type ContainerInfo struct {
@@ -50,69 +47,12 @@ func (r *Router) Start() {
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	var res *ContainerInfo
-
 	// Save the name for later ReturnContainer
 	r.requestMap.Set(req.RequestId, req.FunctionName)
-
 	r.functionMap.SetIfAbsent(req.FunctionName, cmap.New())
-	fmObj, _ := r.functionMap.Get(req.FunctionName)
-	containerMap := fmObj.(cmap.ConcurrentMap)
 
-	for _, key := range sortedKeys(containerMap.Keys()) {
-		cmObj, _ := containerMap.Get(key)
-		container := cmObj.(*ContainerInfo)
-		container.Lock()
-		// todo add algo trigger to async add container and async add node
-		if len(container.requests) < 1 {
-			container.requests[req.RequestId] = 1
-			res = container
-			container.Unlock()
-			break
-		}
-		container.Unlock()
-	}
-
-	if res == nil { // if no idle container exists
-		node, err := r.getNode(req.AccountId, req.FunctionConfig.MemoryInBytes)
-		if err != nil {
-			return nil, err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		replyC, err := node.CreateContainer(ctx, &nsPb.CreateContainerRequest{
-			Name: req.FunctionName + uuid.NewV4().String(),
-			FunctionMeta: &nsPb.FunctionMeta{
-				FunctionName:  req.FunctionName,
-				Handler:       req.FunctionConfig.Handler,
-				TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
-				MemoryInBytes: req.FunctionConfig.MemoryInBytes,
-			},
-			RequestId: req.RequestId,
-		})
-		if err != nil {
-			r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
-			return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
-		}
-		res = &ContainerInfo{
-			id:       replyC.ContainerId,
-			address:  node.address,
-			port:     node.port,
-			nodeId:   node.nodeID,
-			requests: make(map[string]int64),
-		}
-		res.requests[req.RequestId] = 1 // The container hasn't been listed in the containerMap. So we don't need locking here.
-		containerMap.Set(res.id, res)
-		r.cnt2node.Set(res.id, node)
-	}
-
-	return &pb.AcquireContainerReply{
-		NodeId:          res.nodeId,
-		NodeAddress:     res.address,
-		NodeServicePort: res.port,
-		ContainerId:     res.id,
-	}, nil
+	funcExeMode := getFuncExeMode(req)
+	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*NodeInfo, error) {
@@ -186,6 +126,12 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Unlock()
 	r.requestMap.Remove(res.ID)
 	// todo clean containerMap and cnt2node
+	//// tmp out stats
+	//for key,_ := range r.nodeMap.Keys() {
+	//	node := r.nodeMap.Get(key).(*NodeInfo)
+	//
+	//	node.GetStats(ctx,)
+	//}
 	return nil
 }
 

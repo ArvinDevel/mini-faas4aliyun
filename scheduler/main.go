@@ -36,7 +36,7 @@ func main() {
 
 	flag.Parse()
 
-	env.InitLogger("Logger_Default", *logConfigFile)
+	env.InitLogger("PlaceHolderLogger", *logConfigFile)
 
 	defer logger.Flush()
 	defer logger.Infof("Scheduler gRPC server exited.")
