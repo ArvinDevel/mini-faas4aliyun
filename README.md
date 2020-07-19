@@ -145,14 +145,12 @@ FaaS服务方是如何提供服务的呢？其中一个核心的模块是调度�
 本赛题会提供本地测试环境，本地测试环境跟线上评测环境相比，用到的测试函数和测试数据不同，但是又有一定的代表性，比如其中测试函数可能包含但不局限于helloworld，CPU intensive，内存intensive，sleep等类型；调用模式包括稀疏调用，密集调用，周期调用等；执行时间包括时长基本固定，和因输入而异等。**本地测试以验证功能为主**。
 
 
-
 ```
 mkdir -p $GOPATH/src/aliyun/serverless
 cd $GOPATH/src/aliyun/serverless
 git clone https://code.aliyun.com/middleware-contest-2020/mini-faas.git
 cd mini-faas
 ```
-
 
 
 TODO：
