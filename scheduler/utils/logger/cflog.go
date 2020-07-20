@@ -76,8 +76,8 @@ func (_this *CfLogger) format(format string) string {
 		format = fmt.Sprintf("[RequestID: %s] %s", reqID, format)
 	}
 	// Append fields at the end.
-	if _this.fields != nil {
-		format = format + " " + _this.fields.String()
-	}
+	//if _this.fields != nil {
+	//	format = format + " " + _this.fields.String()
+	//}
 	return format
 }

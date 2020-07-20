@@ -47,6 +47,8 @@ func (r *Router) Start() {
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+	logger.Infof("AcquireContainer fn %s timeout %s mem %s",
+		req.FunctionName, req.FunctionConfig.TimeoutInMs, req.FunctionConfig.MemoryInBytes)
 	// Save the name for later ReturnContainer
 	r.requestMap.Set(req.RequestId, req.FunctionName)
 	r.functionMap.SetIfAbsent(req.FunctionName, cmap.New())
@@ -107,6 +109,8 @@ func (r *Router) handleContainerErr(node *NodeInfo, functionMem int64) {
 }
 
 func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) error {
+	logger.Infof("ReturnContainer fn %s ctn %s",
+		res.FunctionName, res.ContainerId)
 	rmObj, ok := r.requestMap.Get(res.ID)
 	if !ok {
 		return errors.Errorf("no request found with id %s", res.ID)
