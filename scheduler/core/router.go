@@ -36,6 +36,7 @@ type Router struct {
 func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 	return &Router{
 		nodeMap:     cmap.New(),
+		fn2finfoMap: cmap.New(),
 		functionMap: cmap.New(),
 		requestMap:  cmap.New(),
 		cnt2node:    cmap.New(),
