@@ -8,7 +8,15 @@ type RequestInfo struct {
 }
 
 type ResponseInfo struct {
-	ID           string
-	FunctionName string
-	ContainerId  string
+	ID                    string
+	ContainerId           string
+	DurationInNanos       int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
+	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
+}
+
+type FuncInfo struct {
+	TimeoutInMs           int64
+	MemoryInBytes         int64
+	DurationInNanos       int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
+	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
 }

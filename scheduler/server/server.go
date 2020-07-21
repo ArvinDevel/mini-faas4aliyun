@@ -68,8 +68,10 @@ func (s *Server) ReturnContainer(ctx context.Context, req *pb.ReturnContainerReq
 	}).Infof("")
 	now := time.Now().UnixNano()
 	err := s.router.ReturnContainer(ctx, &model.ResponseInfo{
-		ID:          req.RequestId,
-		ContainerId: req.ContainerId,
+		ID:                    req.RequestId,
+		ContainerId:           req.ContainerId,
+		DurationInNanos:       req.DurationInNanos,
+		MaxMemoryUsageInBytes: req.MaxMemoryUsageInBytes,
 	})
 	if err != nil {
 		logger.WithFields(logger.Fields{

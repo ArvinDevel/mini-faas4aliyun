@@ -26,6 +26,7 @@ type ContainerInfo struct {
 
 type Router struct {
 	nodeMap     cmap.ConcurrentMap // instance_id -> NodeInfo
+	fn2finfoMap cmap.ConcurrentMap // function_name -> FuncInfo(update info predically)
 	functionMap cmap.ConcurrentMap // function_name -> ContainerMap (container_id -> ContainerInfo)
 	requestMap  cmap.ConcurrentMap // request_id -> FunctionName
 	cnt2node    cmap.ConcurrentMap // ctn_id -> NodeInfo todo release node
@@ -47,12 +48,24 @@ func (r *Router) Start() {
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	logger.Infof("AcquireContainer fn %s timeout %s mem %s",
-		req.FunctionName, req.FunctionConfig.TimeoutInMs, req.FunctionConfig.MemoryInBytes)
 	// Save the name for later ReturnContainer
 	r.requestMap.Set(req.RequestId, req.FunctionName)
 	r.functionMap.SetIfAbsent(req.FunctionName, cmap.New())
-
+	r.fn2finfoMap.SetIfAbsent(req.FunctionName, &model.FuncInfo{
+		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
+		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
+	})
+	finfoObj, ok := r.fn2finfoMap.Get(req.FunctionName)
+	if ok {
+		errors.Errorf("no func info for the fn %s in aquire", req.FunctionName)
+		finfo := finfoObj.(*model.FuncInfo)
+		lastMaxMem := finfo.MaxMemoryUsageInBytes
+		if (lastMaxMem > 0 && lastMaxMem < finfo.MemoryInBytes) {
+			logger.Infof("update aquire req mem from %d to %d ",
+				req.FunctionConfig.MemoryInBytes, lastMaxMem)
+			req.FunctionConfig.MemoryInBytes = lastMaxMem
+		}
+	}
 	funcExeMode := getFuncExeMode(req)
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
@@ -108,13 +121,36 @@ func (r *Router) handleContainerErr(node *NodeInfo, functionMem int64) {
 	node.Unlock()
 }
 
+// todo use stat info from node to predict func type[first priority]
 func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) error {
-	logger.Infof("ReturnContainer fn %s ctn %s",
-		res.FunctionName, res.ContainerId)
 	rmObj, ok := r.requestMap.Get(res.ID)
 	if !ok {
 		return errors.Errorf("no request found with id %s", res.ID)
 	}
+
+	finfoObj, ok := r.fn2finfoMap.Get(rmObj.(string))
+	if !ok {
+		return errors.Errorf("no func info for the fn %s", finfoObj)
+	}
+	finfo := finfoObj.(*model.FuncInfo)
+	lastDuration := finfo.DurationInNanos
+	lastMaxMem := finfo.MaxMemoryUsageInBytes
+
+	curentDuration := res.DurationInNanos
+	curentMaxMem := res.MaxMemoryUsageInBytes
+
+	if (curentDuration > lastDuration) {
+		logger.Infof("ReturnContainer ctn %s, update info 2: time %d",
+			res.ContainerId, curentDuration)
+		finfo.DurationInNanos = curentDuration
+	}
+
+	if (curentMaxMem > lastMaxMem) {
+		logger.Infof("ReturnContainer ctn %s, update info 2: mem %s",
+			res.ContainerId, curentMaxMem)
+		finfo.MaxMemoryUsageInBytes = curentMaxMem
+	}
+
 	fmObj, ok := r.functionMap.Get(rmObj.(string))
 	if !ok {
 		return errors.Errorf("no container acquired for the request %s", res.ID)
