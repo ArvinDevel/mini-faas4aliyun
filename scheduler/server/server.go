@@ -72,6 +72,8 @@ func (s *Server) ReturnContainer(ctx context.Context, req *pb.ReturnContainerReq
 		ContainerId:           req.ContainerId,
 		DurationInNanos:       req.DurationInNanos,
 		MaxMemoryUsageInBytes: req.MaxMemoryUsageInBytes,
+		ErrorCode:             req.ErrorCode,
+		ErrorMessage:          req.ErrorMessage,
 	})
 	if err != nil {
 		logger.WithFields(logger.Fields{
