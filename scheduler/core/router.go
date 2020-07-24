@@ -151,8 +151,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	}
 
 	if (curentMaxMem > lastMaxMem) {
-		logger.Infof("ReturnContainer ctn for %s, update info 2: mem %s",
-			fn, curentMaxMem)
+		logger.Infof("ReturnContainer ctn for %s, update info 2: mem %d, req mem %d",
+			fn, curentMaxMem, finfo.MemoryInBytes)
 		finfo.MaxMemoryUsageInBytes = curentMaxMem
 		finfo.ActualReqMemInBytes = curentMaxMem + slack
 	}
