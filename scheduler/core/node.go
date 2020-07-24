@@ -10,7 +10,7 @@ import (
 	pb "aliyun/serverless/mini-faas/nodeservice/proto"
 )
 
-type NodeInfo struct {
+type ExtendedNodeInfo struct {
 	sync.Mutex
 	nodeID              string
 	address             string
@@ -19,14 +19,21 @@ type NodeInfo struct {
 
 	conn *grpc.ClientConn
 	pb.NodeServiceClient
+
+	// one moment static view: todo use a list of stats
+	TotalMemoryInBytes     int64 `protobuf:"varint,1,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
+	MemoryUsageInBytes     int64 `protobuf:"varint,2,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
+	AvailableMemoryInBytes int64 `protobuf:"varint,3,opt,name=available_memory_in_bytes,json=availableMemoryInBytes,proto3" json:"available_memory_in_bytes,omitempty"`
+	CpuUsagePct            float64
+	ctnCnt                 int
 }
 
-func NewNode(nodeID, address string, port, memory int64) (*NodeInfo, error) {
+func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, error) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", address, port), grpc.WithInsecure())
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return &NodeInfo{
+	return &ExtendedNodeInfo{
 		Mutex:               sync.Mutex{},
 		nodeID:              nodeID,
 		address:             address,
@@ -38,6 +45,6 @@ func NewNode(nodeID, address string, port, memory int64) (*NodeInfo, error) {
 }
 
 // Close closes the connection
-func (n *NodeInfo) Close() {
+func (n *ExtendedNodeInfo) Close() {
 	n.conn.Close()
 }

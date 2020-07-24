@@ -2,12 +2,11 @@ package core
 
 import (
 	"aliyun/serverless/mini-faas/scheduler/model"
-	"context"
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
+	"context"
 
 	nsPb "aliyun/serverless/mini-faas/nodeservice/proto"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
-	"github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"
 	"time"
@@ -78,15 +77,21 @@ func (r *Router) pickCnt4MemIntensive(req *pb.AcquireContainerRequest) (*pb.Acqu
 }
 
 func (r *Router) pickCntBasic(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	var res *ContainerInfo
+	var res *ExtendedContainerInfo
 
-	fmObj, _ := r.functionMap.Get(req.FunctionName)
+	fn := req.FunctionName
+	ctns, _ := r.functionMap.Get(fn)
 
-	containerMap := fmObj.(cmap.ConcurrentMap)
+	ctn_ids := ctns.(*RwLockSlice)
 
-	for _, key := range containerMap.Keys() {
-		cmObj, _ := containerMap.Get(key)
-		container := cmObj.(*ContainerInfo)
+	ctn_ids.RLock()
+	for _, val := range ctn_ids.ctns {
+		cmObj, ok := r.ctn2info.Get(val)
+		if (!ok) {
+			logger.Errorf("No ctn info found 4 ctn %s", val)
+			continue
+		}
+		container := cmObj.(*ExtendedContainerInfo)
 		container.Lock()
 		// todo add algo trigger to async add container and async add node
 		if len(container.requests) < 1 {
@@ -97,6 +102,7 @@ func (r *Router) pickCntBasic(req *pb.AcquireContainerRequest) (*pb.AcquireConta
 		}
 		container.Unlock()
 	}
+	ctn_ids.RUnlock()
 
 	if res == nil { // if no idle container exists
 		node, err := r.getNode(req.AccountId, req.FunctionConfig.MemoryInBytes)
@@ -120,15 +126,19 @@ func (r *Router) pickCntBasic(req *pb.AcquireContainerRequest) (*pb.AcquireConta
 			r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
 			return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 		}
-		res = &ContainerInfo{
+		res = &ExtendedContainerInfo{
 			id:       replyC.ContainerId,
 			address:  node.address,
 			port:     node.port,
 			nodeId:   node.nodeID,
 			requests: make(map[string]int64),
+			fn:       fn,
 		}
-		res.requests[req.RequestId] = 1 // The container hasn't been listed in the containerMap. So we don't need locking here.
-		containerMap.Set(res.id, res)
+		res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
+		ctn_ids.Lock()
+		ctn_ids.ctns = append(ctn_ids.ctns, res.id)
+		ctn_ids.Unlock()
+		r.ctn2info.Set(res.id, res)
 		r.cnt2node.Set(res.id, node)
 	}
 	return &pb.AcquireContainerReply{

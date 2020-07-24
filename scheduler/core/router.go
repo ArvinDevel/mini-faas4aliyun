@@ -7,30 +7,41 @@ import (
 	"sync"
 	"time"
 
-	"aliyun/serverless/mini-faas/scheduler/model"
 	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
-	nsPb "aliyun/serverless/mini-faas/nodeservice/proto"
 	cp "aliyun/serverless/mini-faas/scheduler/config"
+	"aliyun/serverless/mini-faas/scheduler/model"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
 	"github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
 )
 
-type ContainerInfo struct {
+type ExtendedContainerInfo struct {
 	sync.Mutex
 	id       string
 	address  string
 	port     int64
 	nodeId   string
 	requests map[string]int64 // request_id -> status
+
+	TotalMemoryInBytes int64 `protobuf:"varint,2,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
+	MemoryUsageInBytes int64 `protobuf:"varint,3,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
+	CpuUsagePct        float64
+
+	fn string
 }
 
+type RwLockSlice struct {
+	sync.RWMutex
+	ctns []string
+}
 type Router struct {
-	nodeMap     cmap.ConcurrentMap // instance_id -> NodeInfo
+	nodeMap cmap.ConcurrentMap // instance_id -> ExtendedNodeInfo
+	// todo add stats info to fnInfo to predict func type
 	fn2finfoMap cmap.ConcurrentMap // function_name -> FuncInfo(update info predically)
-	functionMap cmap.ConcurrentMap // function_name -> ContainerMap (container_id -> ContainerInfo)
+	functionMap cmap.ConcurrentMap // function_name -> RwLockSlice
 	requestMap  cmap.ConcurrentMap // request_id -> FunctionName
-	cnt2node    cmap.ConcurrentMap // ctn_id -> NodeInfo todo release node
+	ctn2info    cmap.ConcurrentMap // ctn_id -> ExtendedContainerInfo
+	cnt2node    cmap.ConcurrentMap // ctn_id -> ExtendedNodeInfo todo release node
 	rmClient    rmPb.ResourceManagerClient
 }
 
@@ -42,6 +53,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 		fn2finfoMap: cmap.New(),
 		functionMap: cmap.New(),
 		requestMap:  cmap.New(),
+		ctn2info:    cmap.New(),
 		cnt2node:    cmap.New(),
 		rmClient:    rmClient,
 	}
@@ -55,7 +67,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
 	r.requestMap.Set(req.RequestId, fn)
-	r.functionMap.SetIfAbsent(fn, cmap.New())
+	r.functionMap.SetIfAbsent(fn, &RwLockSlice{})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
 		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
@@ -64,10 +76,10 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
 
-func (r *Router) getNode(accountId string, memoryReq int64) (*NodeInfo, error) {
+func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	for _, key := range sortedKeys(r.nodeMap.Keys()) {
 		nmObj, _ := r.nodeMap.Get(key)
-		node := nmObj.(*NodeInfo)
+		node := nmObj.(*ExtendedNodeInfo)
 		node.Lock()
 		if node.availableMemInBytes > memoryReq {
 			node.availableMemInBytes -= memoryReq
@@ -79,7 +91,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*NodeInfo, error) {
 	return r.remoteGetNode(accountId)
 }
 
-func (r *Router) remoteGetNode(accountId string) (*NodeInfo, error) {
+func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
@@ -109,7 +121,7 @@ func (r *Router) remoteGetNode(accountId string) (*NodeInfo, error) {
 	return node, nil
 }
 
-func (r *Router) handleContainerErr(node *NodeInfo, functionMem int64) {
+func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
 	node.Lock()
 	node.availableMemInBytes += functionMem
 	node.Unlock()
@@ -150,40 +162,17 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		finfo.ActualUsedMemInBytes = curentMaxMem + slack
 	}
 
-	fmObj, ok := r.functionMap.Get(fn)
-	if !ok {
-		return errors.Errorf("no container acquired for the request %s", res.ID)
-	}
-	containerMap := fmObj.(cmap.ConcurrentMap)
-	cmObj, ok := containerMap.Get(res.ContainerId)
+	ctnInfo, ok := r.ctn2info.Get(res.ContainerId)
 	if !ok {
 		return errors.Errorf("no container found with id %s", res.ContainerId)
 	}
-	container := cmObj.(*ContainerInfo)
+	container := ctnInfo.(*ExtendedContainerInfo)
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
 	r.requestMap.Remove(res.ID)
+	go r.UpdateStats()
 	// todo clean containerMap and cnt2node
-	go func() {
-		// get stats async
-
-		nodeInfo, ok := r.cnt2node.Get(res.ContainerId)
-		if !ok {
-			errors.Errorf("no node  found 4 container id %s", res.ContainerId)
-			return
-		}
-		node := nodeInfo.(*NodeInfo)
-
-		statsReq := &nsPb.GetStatsRequest{
-			RequestId: res.ContainerId,
-		}
-		statsResp, error := node.GetStats(ctx, statsReq)
-		if (error != nil) {
-			logger.Infof("statsResp is %s", statsResp)
-		}
-		logger.Errorf("GetStats from %s fail", node.nodeID)
-	}()
 	return nil
 }
 
