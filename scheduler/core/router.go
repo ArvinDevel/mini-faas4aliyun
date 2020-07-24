@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
-	cp "aliyun/serverless/mini-faas/scheduler/config"
 	"aliyun/serverless/mini-faas/scheduler/model"
+	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
+	nsPb "aliyun/serverless/mini-faas/nodeservice/proto"
+	cp "aliyun/serverless/mini-faas/scheduler/config"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
 	"github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
@@ -59,14 +60,6 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
-	finfoObj, ok := r.fn2finfoMap.Get(fn)
-	if ok {
-		finfo := finfoObj.(*model.FuncInfo)
-		actualReqMem := finfo.ActualReqMemInBytes
-		if (actualReqMem > 0 && actualReqMem < finfo.MemoryInBytes) {
-			req.FunctionConfig.MemoryInBytes = actualReqMem
-		}
-	}
 	funcExeMode := getFuncExeMode(req)
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
@@ -96,14 +89,14 @@ func (r *Router) remoteGetNode(accountId string) (*NodeInfo, error) {
 	if err != nil {
 		logger.WithFields(logger.Fields{
 			"Operation": "ReserveNode",
-			"Latency": (time.Now().UnixNano() - now)/1e6,
-			"Error": true,
+			"Latency":   (time.Now().UnixNano() - now) / 1e6,
+			"Error":     true,
 		}).Errorf("Failed to reserve node due to %v", err)
 		return nil, errors.WithStack(err)
 	}
 	logger.WithFields(logger.Fields{
 		"Operation": "ReserveNode",
-		"Latency": (time.Now().UnixNano() - now)/1e6,
+		"Latency":   (time.Now().UnixNano() - now) / 1e6,
 	}).Infof("")
 
 	nodeDesc := replyRn.Node
@@ -154,7 +147,7 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		logger.Infof("ReturnContainer ctn for %s, update info 2: mem %d, req mem %d",
 			fn, curentMaxMem, finfo.MemoryInBytes)
 		finfo.MaxMemoryUsageInBytes = curentMaxMem
-		finfo.ActualReqMemInBytes = curentMaxMem + slack
+		finfo.ActualUsedMemInBytes = curentMaxMem + slack
 	}
 
 	fmObj, ok := r.functionMap.Get(fn)
@@ -172,12 +165,25 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Unlock()
 	r.requestMap.Remove(res.ID)
 	// todo clean containerMap and cnt2node
-	//// tmp out stats
-	//for key,_ := range r.nodeMap.Keys() {
-	//	node := r.nodeMap.Get(key).(*NodeInfo)
-	//
-	//	node.GetStats(ctx,)
-	//}
+	go func() {
+		// get stats async
+
+		nodeInfo, ok := r.cnt2node.Get(res.ContainerId)
+		if !ok {
+			errors.Errorf("no node  found 4 container id %s", res.ContainerId)
+			return
+		}
+		node := nodeInfo.(*NodeInfo)
+
+		statsReq := &nsPb.GetStatsRequest{
+			RequestId: res.ContainerId,
+		}
+		statsResp, error := node.GetStats(ctx, statsReq)
+		if (error != nil) {
+			logger.Infof("statsResp is %s", statsResp)
+		}
+		logger.Errorf("GetStats from %s fail", node.nodeID)
+	}()
 	return nil
 }
 

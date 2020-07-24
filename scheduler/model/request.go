@@ -21,5 +21,5 @@ type FuncInfo struct {
 	MemoryInBytes         int64
 	DurationInNanos       int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
 	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
-	ActualReqMemInBytes   int64
+	ActualUsedMemInBytes  int64
 }

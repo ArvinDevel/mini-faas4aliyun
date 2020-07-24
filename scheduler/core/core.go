@@ -1,6 +1,7 @@
 package core
 
 import (
+	"aliyun/serverless/mini-faas/scheduler/model"
 	"context"
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 
@@ -49,11 +50,27 @@ func (r *Router) pickCntAccording2ExeMode(exeMode FuncExeMode, req *pb.AcquireCo
 }
 
 func (r *Router) pickCnt4ResourceLess(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+	r.reduceReqMem(req)
 	return r.pickCntBasic(req);
 }
 
 func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+	r.reduceReqMem(req)
 	return r.pickCntBasic(req);
+}
+
+func (r *Router) reduceReqMem(req *pb.AcquireContainerRequest) {
+	fn := req.FunctionName
+	finfoObj, ok := r.fn2finfoMap.Get(fn)
+	if ok {
+		finfo := finfoObj.(*model.FuncInfo)
+		actualUsedMem := finfo.ActualUsedMemInBytes
+		if (actualUsedMem > 0 && actualUsedMem < finfo.MemoryInBytes) {
+			req.FunctionConfig.MemoryInBytes = actualUsedMem
+			logger.Infof("change req mem from %s to %s for fn %s",
+				finfo.MemoryInBytes, actualUsedMem, fn)
+		}
+	}
 }
 
 func (r *Router) pickCnt4MemIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
