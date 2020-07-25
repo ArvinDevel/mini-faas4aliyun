@@ -12,26 +12,9 @@ import (
 	"time"
 )
 
-type FuncCallMode int
-
-//pre do action(swarm up or release quickly) according to stats or predict
-const (
-	Periodical FuncCallMode = iota // 0 周期型
-	Sparse                         // 1 稀疏型
-	Dense                          // 2 密集型
-)
-
-type FuncExeMode int
-
-//choose adequate resource according to FuncExeMode
-const (
-	CpuIntensive FuncExeMode = iota // acquire resource as fast as , cpu locate
-	MemIntensive                    // acquire resource as fast as , mem locate
-	ResourceLess                    // reuse old container
-)
-
 func getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
-	// todo use stats
+	// todo use basic ratio FIRST PRIORITY ！use stats
+
 	return ResourceLess
 }
 
@@ -80,7 +63,8 @@ func (r *Router) pickCntBasic(req *pb.AcquireContainerRequest) (*pb.AcquireConta
 	var res *ExtendedContainerInfo
 
 	fn := req.FunctionName
-	ctns, _ := r.functionMap.Get(fn)
+	// if not ok, panic
+	ctns, _ := r.fn2ctnSlice.Get(fn)
 
 	ctn_ids := ctns.(*RwLockSlice)
 
@@ -110,7 +94,7 @@ func (r *Router) pickCntBasic(req *pb.AcquireContainerRequest) (*pb.AcquireConta
 			return nil, err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		replyC, err := node.CreateContainer(ctx, &nsPb.CreateContainerRequest{
 			Name: req.FunctionName + uuid.NewV4().String(),

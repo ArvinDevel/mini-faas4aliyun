@@ -26,6 +26,8 @@ type ExtendedNodeInfo struct {
 	AvailableMemoryInBytes int64 `protobuf:"varint,3,opt,name=available_memory_in_bytes,json=availableMemoryInBytes,proto3" json:"available_memory_in_bytes,omitempty"`
 	CpuUsagePct            float64
 	ctnCnt                 int
+	// used to forbidden access to failed node
+	failedCnt int
 }
 
 func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, error) {

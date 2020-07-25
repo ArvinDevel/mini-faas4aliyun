@@ -4,9 +4,9 @@ import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"sort"
-	"sync"
 	"time"
 
+	nspb "aliyun/serverless/mini-faas/nodeservice/proto"
 	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
 	cp "aliyun/serverless/mini-faas/scheduler/config"
 	"aliyun/serverless/mini-faas/scheduler/model"
@@ -15,43 +15,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-type ExtendedContainerInfo struct {
-	sync.Mutex
-	id       string
-	address  string
-	port     int64
-	nodeId   string
-	requests map[string]int64 // request_id -> status
-
-	TotalMemoryInBytes int64 `protobuf:"varint,2,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
-	MemoryUsageInBytes int64 `protobuf:"varint,3,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
-	CpuUsagePct        float64
-
-	fn string
-}
-
-type RwLockSlice struct {
-	sync.RWMutex
-	ctns []string
-}
-type Router struct {
-	nodeMap cmap.ConcurrentMap // instance_id -> ExtendedNodeInfo
-	// todo add stats info to fnInfo to predict func type
-	fn2finfoMap cmap.ConcurrentMap // function_name -> FuncInfo(update info predically)
-	functionMap cmap.ConcurrentMap // function_name -> RwLockSlice
-	requestMap  cmap.ConcurrentMap // request_id -> FunctionName
-	ctn2info    cmap.ConcurrentMap // ctn_id -> ExtendedContainerInfo
-	cnt2node    cmap.ConcurrentMap // ctn_id -> ExtendedNodeInfo todo release node
-	rmClient    rmPb.ResourceManagerClient
-}
-
-var slack int64 = 5 * 1000 * 1000
-
 func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 	return &Router{
 		nodeMap:     cmap.New(),
 		fn2finfoMap: cmap.New(),
-		functionMap: cmap.New(),
+		fn2ctnSlice: cmap.New(),
 		requestMap:  cmap.New(),
 		ctn2info:    cmap.New(),
 		cnt2node:    cmap.New(),
@@ -60,14 +28,15 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	// Just in case the router has internal loops.
+	// todo swarm up
+	go r.UpdateStats()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
 	r.requestMap.Set(req.RequestId, fn)
-	r.functionMap.SetIfAbsent(fn, &RwLockSlice{})
+	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
 		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
@@ -77,9 +46,15 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
-	for _, key := range sortedKeys(r.nodeMap.Keys()) {
+	values := []*ExtendedNodeInfo{}
+	for _, key := range r.nodeMap.Keys() {
 		nmObj, _ := r.nodeMap.Get(key)
 		node := nmObj.(*ExtendedNodeInfo)
+		values = append(values, node)
+	}
+	sortedValues(values)
+	// todo best fit
+	for _, node := range values {
 		node.Lock()
 		if node.availableMemInBytes > memoryReq {
 			node.availableMemInBytes -= memoryReq
@@ -88,10 +63,10 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		}
 		node.Unlock()
 	}
-	return r.remoteGetNode(accountId)
+	return r.remoteGetNode(accountId, memoryReq)
 }
 
-func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
+func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
@@ -112,9 +87,9 @@ func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	}).Infof("")
 
 	nodeDesc := replyRn.Node
-	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes)
+	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
 	if err != nil {
-		// TODO: Release the Node
+		go r.remoteReleaseNode(nodeDesc.Id)
 		return nil, err
 	}
 	r.nodeMap.Set(nodeDesc.Id, node)
@@ -123,6 +98,7 @@ func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 
 func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
 	node.Lock()
+	node.failedCnt += 1
 	node.availableMemInBytes += functionMem
 	node.Unlock()
 }
@@ -134,30 +110,32 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		return errors.Errorf("no request found with id %s", res.ID)
 	}
 	fn := rmObj.(string)
-	if (res.ErrorCode != "") {
+	if (res.ErrorCode != "" || res.ErrorMessage != "") {
 		logger.Errorf("ctn error for %s, reqId %s, errorCd %s, errMsg %s",
 			fn, res.ID, res.ErrorCode, res.ErrorMessage)
+		r.releaseCtn(fn, res.ContainerId)
+		return nil
 	}
 	finfoObj, ok := r.fn2finfoMap.Get(fn)
 	if !ok {
 		return errors.Errorf("no func info for the fn %s", finfoObj)
 	}
 	finfo := finfoObj.(*model.FuncInfo)
-	lastDuration := finfo.DurationInNanos
+	lastDuration := finfo.DurationInMs
 	lastMaxMem := finfo.MaxMemoryUsageInBytes
 
-	curentDuration := res.DurationInNanos
+	curentDuration := res.DurationInMs
 	curentMaxMem := res.MaxMemoryUsageInBytes
 
 	if (curentDuration > lastDuration) {
-		logger.Infof("ReturnContainer ctn for %s, update info 2: time %d",
-			fn, curentDuration)
-		finfo.DurationInNanos = curentDuration
+		//logger.Infof("ReturnContainer ctn for %s, update info 2: time %d",
+		//	fn, curentDuration)
+		finfo.DurationInMs = curentDuration
 	}
 
 	if (curentMaxMem > lastMaxMem) {
-		logger.Infof("ReturnContainer ctn for %s, update info 2: mem %d, req mem %d",
-			fn, curentMaxMem, finfo.MemoryInBytes)
+		//logger.Infof("ReturnContainer ctn for %s, update info 2: mem %d, req mem %d",
+		//	fn, curentMaxMem, finfo.MemoryInBytes)
 		finfo.MaxMemoryUsageInBytes = curentMaxMem
 		finfo.ActualUsedMemInBytes = curentMaxMem + slack
 	}
@@ -170,13 +148,73 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
+	logger.Infof("fn %s %d %d, container: %f %d %d",
+		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
+		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
 	r.requestMap.Remove(res.ID)
-	go r.UpdateStats()
 	// todo clean containerMap and cnt2node
+	//todo release node&ctn
 	return nil
 }
 
-func sortedKeys(keys []string) []string {
-	sort.Strings(keys)
-	return keys
+func (r *Router) releaseCtn(fn string, ctnId string) {
+	r.ctn2info.Remove(ctnId)
+	r.remoteReleaseCtn(ctnId)
+	// rm from fn2ctnSlice
+	ctns, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := ctns.(*RwLockSlice)
+	ctn_ids := ctnSlice.ctns
+
+	outerIdx := -1
+	for idx, val := range ctn_ids {
+		if (val == ctnId) {
+			outerIdx = idx
+		}
+	}
+	ctnSlice.Lock()
+	ctn_ids = ctns.(*RwLockSlice).ctns
+	ctnSlice.ctns = append(ctn_ids[:outerIdx], ctn_ids[outerIdx+1:]...)
+	ctnSlice.Unlock()
+}
+
+func (r *Router) remoteReleaseCtn(ctnId string) {
+	nodeWrapper, ok := r.cnt2node.Get(ctnId)
+	if (!ok) {
+		logger.Errorf("No cnt2node for %s", ctnId)
+		return
+	}
+	node := nodeWrapper.(*ExtendedNodeInfo)
+	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelR()
+	req := &nspb.RemoveContainerRequest{
+		RequestId:   mockStr,
+		ContainerId: ctnId,
+	}
+	reply, error := node.RemoveContainer(ctxR, req)
+	if (error != nil) {
+		logger.Errorf("RemoveContainer fail for %s, %s", ctnId, reply)
+	}
+}
+func (r *Router) remoteReleaseNode(nid string) {
+	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelR()
+	_, err := r.rmClient.ReleaseNode(ctxR, &rmPb.ReleaseNodeRequest{
+		Id:        nid,
+		RequestId: mockStr,
+	})
+	if err != nil {
+		logger.WithFields(logger.Fields{
+			"Operation": "remoteReleaseNode",
+			"Error":     true,
+		}).Errorf("Failed to remoteReleaseNode node due to %v", err)
+	}
+}
+
+func sortedValues(values []*ExtendedNodeInfo) {
+	sort.Slice(values, func(i, j int) bool {
+		if (values[i].availableMemInBytes < values[j].availableMemInBytes) {
+			return true
+		}
+		return values[i].failedCnt < values[j].failedCnt
+	})
 }
