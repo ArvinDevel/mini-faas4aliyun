@@ -57,10 +57,12 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 			continue
 		}
 		container.Lock()
-		container.TotalMemoryInBytes = ctnStat.TotalMemoryInBytes
-		container.MemoryUsageInBytes = ctnStat.MemoryUsageInBytes
-		// todo use avg? may not acurate
-		container.CpuUsagePct = ctnStat.CpuUsagePct
+		container.TotalMemoryInBytes = float64(ctnStat.TotalMemoryInBytes)
+		container.MemoryUsageInBytes = float64(ctnStat.MemoryUsageInBytes)
+		// 悲观估计 todo improve
+		if (ctnStat.CpuUsagePct > 0) {
+			container.CpuUsagePct = (container.CpuUsagePct + ctnStat.CpuUsagePct) / 2
+		}
 		container.Unlock()
 	}
 }

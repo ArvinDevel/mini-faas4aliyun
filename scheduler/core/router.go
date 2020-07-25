@@ -52,7 +52,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		node := nmObj.(*ExtendedNodeInfo)
 		values = append(values, node)
 	}
-	sortedValues(values)
+	sortNodeByUsage(values)
 	// todo best fit
 	for _, node := range values {
 		node.Lock()
@@ -83,6 +83,8 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 	}
 
 	nodeDesc := replyRn.Node
+	logger.Infof("ReserveNode %d Latency %d",
+		nodeDesc, (time.Now().UnixNano()-now)/1e6)
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
@@ -144,7 +146,7 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("fn %s %d %d, container: %f %d %d",
+	logger.Infof("fn %s %d %d, container: %f %f %f",
 		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
 		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
 	r.requestMap.Remove(res.ID)
@@ -214,7 +216,7 @@ func (r *Router) remoteReleaseNode(nid string) {
 	}
 }
 
-func sortedValues(values []*ExtendedNodeInfo) {
+func sortNodeByUsage(values []*ExtendedNodeInfo) {
 	sort.Slice(values, func(i, j int) bool {
 		if (values[i].availableMemInBytes < values[j].availableMemInBytes) {
 			return true

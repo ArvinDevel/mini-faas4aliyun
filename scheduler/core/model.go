@@ -35,8 +35,8 @@ type ExtendedContainerInfo struct {
 	nodeId   string
 	requests map[string]int64 // request_id -> status
 
-	TotalMemoryInBytes int64 `protobuf:"varint,2,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
-	MemoryUsageInBytes int64 `protobuf:"varint,3,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
+	TotalMemoryInBytes float64 `protobuf:"varint,2,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
+	MemoryUsageInBytes float64 `protobuf:"varint,3,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
 	CpuUsagePct        float64
 
 	fn string
@@ -68,3 +68,18 @@ var getStatsReq = &nspb.GetStatsRequest{
 }
 
 var fetchStatsDuration = time.Duration(time.Millisecond * 300)
+
+var cpuHighThreshold = 0.5
+var memHighThreshold = 0.6
+var parallelReqNum = 10
+
+// util/helper
+func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
+	if ctn.MemoryUsageInBytes/ctn.TotalMemoryInBytes > memHighThreshold {
+		return true
+	}
+	if ctn.CpuUsagePct > cpuHighThreshold {
+		return true
+	}
+	return false
+}
