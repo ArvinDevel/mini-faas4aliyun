@@ -129,7 +129,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	for _, ctn := range ctns {
 		ctn.Lock()
 		if len(ctn.requests) < parallelReqNum {
-			ctn.requests[req.RequestId] += 1
+			ctn.requests[req.RequestId] = 1
 			res = ctn
 			ctn.Unlock()
 			break

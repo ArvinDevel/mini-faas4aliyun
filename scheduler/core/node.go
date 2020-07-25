@@ -23,7 +23,7 @@ type ExtendedNodeInfo struct {
 	// one moment static view: todo use a list of stats
 	TotalMemoryInBytes     int64 `protobuf:"varint,1,opt,name=total_memory_in_bytes,json=totalMemoryInBytes,proto3" json:"total_memory_in_bytes,omitempty"`
 	MemoryUsageInBytes     int64 `protobuf:"varint,2,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
-	AvailableMemoryInBytes int64 `protobuf:"varint,3,opt,name=available_memory_in_bytes,json=availableMemoryInBytes,proto3" json:"available_memory_in_bytes,omitempty"`
+	AvailableMemoryInBytes float64 `protobuf:"varint,3,opt,name=available_memory_in_bytes,json=availableMemoryInBytes,proto3" json:"available_memory_in_bytes,omitempty"`
 	CpuUsagePct            float64
 	ctnCnt                 int
 	// used to forbidden access to failed node

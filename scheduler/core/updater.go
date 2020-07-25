@@ -41,7 +41,7 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		node.Unlock()
 	}
 	// todo check whether need add lock
-	node.AvailableMemoryInBytes = nodeStat.AvailableMemoryInBytes
+	node.AvailableMemoryInBytes = float64(nodeStat.AvailableMemoryInBytes)
 	node.CpuUsagePct = nodeStat.CpuUsagePct
 	node.MemoryUsageInBytes = nodeStat.MemoryUsageInBytes
 	node.ctnCnt = len(ctnStatList)

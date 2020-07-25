@@ -72,6 +72,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 }
 
 func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
+	// todo use adaquate timeout
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
@@ -104,8 +105,15 @@ func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*Extended
 		return nil, errors.Errorf("No local node can be reused")
 	}
 
+	// choose more
 	sort.Slice(localNodes, func(i, j int) bool {
-		return localNodes[i].availableMemInBytes > localNodes[j].availableMemInBytes
+		aMem := localNodes[i].AvailableMemoryInBytes
+		aCpu := localNodes[i].CpuUsagePct
+		aVal := aMem*0.8 + (200-aCpu)*0.2
+		bMem := localNodes[j].AvailableMemoryInBytes
+		bCpu := localNodes[j].CpuUsagePct
+		bVal := bMem*0.8 + (200-bCpu)*0.2
+		return aVal > bVal
 	})
 	return localNodes[0], nil
 }
