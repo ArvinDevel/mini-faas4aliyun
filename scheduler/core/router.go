@@ -183,8 +183,9 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
 		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
 	r.requestMap.Remove(res.ID)
-	r.rmCtnFromFnMap(fn, res.ContainerId)
 	//todo release node&ctn when ctn is idle long for pericaolly program
+	// currently, don't release
+	r.releaseCtn(fn, res.ContainerId)
 	return nil
 }
 func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
@@ -209,7 +210,7 @@ func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
 }
 func (r *Router) releaseCtn(fn string, ctnId string) {
 	r.ctn2info.Remove(ctnId)
-	r.remoteReleaseCtn(ctnId)
+	go r.remoteReleaseCtn(ctnId)
 	// rm cnt2node
 	r.cnt2node.Remove(ctnId)
 
