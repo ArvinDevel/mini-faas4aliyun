@@ -32,12 +32,12 @@ func (r *Router) pickCntAccording2ExeMode(exeMode FuncExeMode, req *pb.AcquireCo
 }
 
 func (r *Router) pickCnt4ResourceLess(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	r.reduceReqMem(req)
+	//r.reduceReqMem(req)
 	return r.pickCntBasic(req);
 }
 
 func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	r.reduceReqMem(req)
+	//r.reduceReqMem(req)
 	return r.pickCntBasic(req);
 }
 
