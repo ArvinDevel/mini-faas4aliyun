@@ -185,7 +185,7 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release
-	r.releaseCtn(fn, res.ContainerId)
+	//r.releaseCtn(fn, res.ContainerId)
 	return nil
 }
 func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
