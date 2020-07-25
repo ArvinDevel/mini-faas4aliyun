@@ -107,6 +107,15 @@ func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*Extended
 
 	// choose more
 	sort.Slice(localNodes, func(i, j int) bool {
+		if localNodes[i].CpuUsagePct > nodeCpuHighThreshold {
+			return false
+		}
+		if localNodes[i].failedCnt > nodeFailedCntThreshold {
+			return false
+		}
+		if localNodes[i].MemoryUsageInBytes/localNodes[i].TotalMemoryInBytes > nodeMemHighThreshold {
+			return false
+		}
 		aMem := localNodes[i].AvailableMemoryInBytes
 		aCpu := localNodes[i].CpuUsagePct
 		aVal := aMem*0.8 + (200-aCpu)*0.2

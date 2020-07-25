@@ -69,19 +69,23 @@ var getStatsReq = &nspb.GetStatsRequest{
 
 var fetchStatsDuration = time.Duration(time.Millisecond * 300)
 
-var cpuHighThreshold = 0.5
-var memHighThreshold = 0.6
+var ctnCpuHighThreshold = 0.5
+var ctnMemHighThreshold = 0.6
 var parallelReqNum = 10
+
+var nodeCpuHighThreshold = 150.0
+var nodeMemHighThreshold = 0.75
+var nodeFailedCntThreshold = 10
 
 // util/helper
 func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 	if (ctn.TotalMemoryInBytes == 0) {
 		return false
 	}
-	if ctn.MemoryUsageInBytes/ctn.TotalMemoryInBytes > memHighThreshold {
+	if ctn.MemoryUsageInBytes/ctn.TotalMemoryInBytes > ctnMemHighThreshold {
 		return true
 	}
-	if ctn.CpuUsagePct > cpuHighThreshold {
+	if ctn.CpuUsagePct > ctnCpuHighThreshold {
 		return true
 	}
 	return false

@@ -176,6 +176,14 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 		r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
+	// reset node info
+	lastFailedCnt := node.failedCnt
+	if lastFailedCnt > 0 {
+		node.Lock()
+		node.failedCnt = 0
+		node.Unlock()
+		logger.Infof("Reset node %s fail cnt from %d to 0", node.address, lastFailedCnt)
+	}
 	res = &ExtendedContainerInfo{
 		id:       replyC.ContainerId,
 		address:  node.address,

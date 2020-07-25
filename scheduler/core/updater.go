@@ -37,13 +37,13 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	ctnStatList := statsResp.ContainerStatsList
 	if (node.TotalMemoryInBytes == 0) {
 		node.Lock()
-		node.TotalMemoryInBytes = nodeStat.TotalMemoryInBytes
+		node.TotalMemoryInBytes = float64(nodeStat.TotalMemoryInBytes)
 		node.Unlock()
 	}
 	// todo check whether need add lock
 	node.AvailableMemoryInBytes = float64(nodeStat.AvailableMemoryInBytes)
 	node.CpuUsagePct = nodeStat.CpuUsagePct
-	node.MemoryUsageInBytes = nodeStat.MemoryUsageInBytes
+	node.MemoryUsageInBytes = float64(nodeStat.MemoryUsageInBytes)
 	node.ctnCnt = len(ctnStatList)
 
 	for _, ctnStat := range ctnStatList {
