@@ -49,7 +49,7 @@ func (r *Router) reduceReqMem(req *pb.AcquireContainerRequest) {
 		actualUsedMem := finfo.ActualUsedMemInBytes
 		if (actualUsedMem > 0 && actualUsedMem < finfo.MemoryInBytes) {
 			req.FunctionConfig.MemoryInBytes = actualUsedMem
-			logger.Infof("change req mem from %s to %s for fn %s",
+			logger.Infof("change req mem from %d to %d for fn %s",
 				finfo.MemoryInBytes, actualUsedMem, fn)
 		}
 	}

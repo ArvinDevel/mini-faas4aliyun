@@ -81,10 +81,6 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 		}).Errorf("Failed to reserve node due to %v", err)
 		return nil, errors.WithStack(err)
 	}
-	logger.WithFields(logger.Fields{
-		"Operation": "ReserveNode",
-		"Latency":   (time.Now().UnixNano() - now) / 1e6,
-	}).Infof("")
 
 	nodeDesc := replyRn.Node
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
@@ -152,14 +148,11 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
 		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
 	r.requestMap.Remove(res.ID)
-	// todo clean containerMap and cnt2node
-	//todo release node&ctn
+	r.rmCtnFromFnMap(fn, res.ContainerId)
+	//todo release node&ctn when ctn is idle long for pericaolly program
 	return nil
 }
-
-func (r *Router) releaseCtn(fn string, ctnId string) {
-	r.ctn2info.Remove(ctnId)
-	r.remoteReleaseCtn(ctnId)
+func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
 	// rm from fn2ctnSlice
 	ctns, _ := r.fn2ctnSlice.Get(fn)
 	ctnSlice := ctns.(*RwLockSlice)
@@ -167,14 +160,25 @@ func (r *Router) releaseCtn(fn string, ctnId string) {
 
 	outerIdx := -1
 	for idx, val := range ctn_ids {
-		if (val == ctnId) {
+		if ctnId == val {
 			outerIdx = idx
 		}
+	}
+	if outerIdx == -1 {
+		return
 	}
 	ctnSlice.Lock()
 	ctn_ids = ctns.(*RwLockSlice).ctns
 	ctnSlice.ctns = append(ctn_ids[:outerIdx], ctn_ids[outerIdx+1:]...)
 	ctnSlice.Unlock()
+}
+func (r *Router) releaseCtn(fn string, ctnId string) {
+	r.ctn2info.Remove(ctnId)
+	r.remoteReleaseCtn(ctnId)
+	// rm cnt2node
+	r.cnt2node.Remove(ctnId)
+
+	r.rmCtnFromFnMap(fn, ctnId)
 }
 
 func (r *Router) remoteReleaseCtn(ctnId string) {
