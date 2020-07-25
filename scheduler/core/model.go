@@ -75,6 +75,9 @@ var parallelReqNum = 10
 
 // util/helper
 func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
+	if (ctn.TotalMemoryInBytes == 0) {
+		return false
+	}
 	if ctn.MemoryUsageInBytes/ctn.TotalMemoryInBytes > memHighThreshold {
 		return true
 	}

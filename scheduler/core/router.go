@@ -63,7 +63,12 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		}
 		node.Unlock()
 	}
-	return r.remoteGetNode(accountId, memoryReq)
+	logger.Infof("current nodes %s can't affoard %d", values, memoryReq)
+	node, err := r.remoteGetNode(accountId, memoryReq)
+	if (err != nil) {
+		return r.fallbackUseLocalNode(values)
+	}
+	return node, nil
 }
 
 func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
@@ -92,6 +97,17 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 	}
 	r.nodeMap.Set(nodeDesc.Id, node)
 	return node, nil
+}
+
+func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*ExtendedNodeInfo, error) {
+	if len(localNodes) == 0 {
+		return nil, errors.Errorf("No local node can be reused")
+	}
+
+	sort.Slice(localNodes, func(i, j int) bool {
+		return localNodes[i].availableMemInBytes > localNodes[j].availableMemInBytes
+	})
+	return localNodes[0], nil
 }
 
 func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
