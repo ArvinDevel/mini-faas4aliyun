@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"github.com/orcaman/concurrent-map"
 	"sync"
 	"time"
@@ -40,6 +41,8 @@ type ExtendedContainerInfo struct {
 	CpuUsagePct        float64
 
 	fn string
+
+	usable bool `whether is usable used for indicate deleting`
 }
 
 type RwLockSlice struct {
@@ -68,6 +71,8 @@ var getStatsReq = &nspb.GetStatsRequest{
 }
 
 var fetchStatsDuration = time.Duration(time.Millisecond * 300)
+// todo ajustment according to preorica
+var releaseResourcesDuration = time.Duration(time.Second * 3)
 
 var ctnCpuHighThreshold = 0.5
 var ctnMemHighThreshold = 0.6
@@ -89,4 +94,11 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 		return true
 	}
 	return false
+}
+
+func (ctn *ExtendedContainerInfo) String() string {
+	return fmt.Sprintf("Ctn [%b,%s],mem: %f/%f, cpu:%f ,fn: %s ",
+		ctn.usable, ctn.id,
+		ctn.MemoryUsageInBytes, ctn.TotalMemoryInBytes, ctn.CpuUsagePct,
+		ctn.fn)
 }

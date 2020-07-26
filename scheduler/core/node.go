@@ -28,6 +28,8 @@ type ExtendedNodeInfo struct {
 	ctnCnt                 int
 	// used to forbidden access to failed node
 	failedCnt int
+
+	//usable bool
 }
 
 func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, error) {

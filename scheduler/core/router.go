@@ -28,8 +28,9 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	// todo swarm up
+	// todo swarm up and use ONE NODE first(currently multiple query boost 10 nodes)
 	go r.UpdateStats()
+	go r.ReleaseCtnResource()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
@@ -90,8 +91,8 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 
 	nodeDesc := replyRn.Node
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
-	logger.Infof("ReserveNode %s Latency %d",
-		node, (time.Now().UnixNano()-now)/1e6)
+	logger.Infof("ReserveNode accntId %s %s Latency %d",
+		accountId, node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
 		return nil, err
@@ -224,7 +225,6 @@ func (r *Router) remoteReleaseCtn(ctnId string) {
 	// rm cnt2node
 	r.cnt2node.Remove(ctnId)
 	node := nodeWrapper.(*ExtendedNodeInfo)
-	logger.Infof("node info %s for ctn %s", node, ctnId)
 	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelR()
 	req := &nspb.RemoveContainerRequest{

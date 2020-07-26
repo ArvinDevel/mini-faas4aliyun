@@ -87,7 +87,7 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 		}
 		container := cmObj.(*ExtendedContainerInfo)
 		container.Lock()
-		if len(container.requests) < 1 {
+		if container.usable && len(container.requests) < 1 {
 			container.requests[req.RequestId] = 1
 			res = container
 			container.Unlock()
@@ -136,7 +136,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	sortCtnByMemUsage(ctns)
 	for _, ctn := range ctns {
 		ctn.Lock()
-		if len(ctn.requests) < parallelReqNum {
+		if ctn.usable && len(ctn.requests) < parallelReqNum {
 			ctn.requests[req.RequestId] = 1
 			res = ctn
 			ctn.Unlock()
@@ -199,6 +199,7 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 		nodeId:   node.nodeID,
 		requests: make(map[string]int64),
 		fn:       req.FunctionName,
+		usable:   true,
 	}
 	res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
 

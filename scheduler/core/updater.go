@@ -45,6 +45,7 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	node.CpuUsagePct = nodeStat.CpuUsagePct
 	node.MemoryUsageInBytes = float64(nodeStat.MemoryUsageInBytes)
 	node.ctnCnt = len(ctnStatList)
+	// todo release node :first mark, then delete
 
 	for _, ctnStat := range ctnStatList {
 		ctnInfo, ok := r.ctn2info.Get(ctnStat.ContainerId)
@@ -65,4 +66,39 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		}
 		container.Unlock()
 	}
+}
+
+func (r *Router) ReleaseCtnResource() {
+	// release unused ctn async predicolly:only keep one replica
+	// NOT APPLYED for mem intensive:
+	ticker := time.NewTicker(releaseResourcesDuration)
+	defer ticker.Stop()
+	for {
+		<-ticker.C
+		for _, key := range r.ctn2info.Keys() {
+			ctnInfo, _ := r.ctn2info.Get(key)
+			container := ctnInfo.(*ExtendedContainerInfo)
+			fn := container.fn
+			// consider fn container replica, todo consider fun frequency and duration
+			if r.ctnReplicaNum4Fn(fn) < 2 {
+				continue
+			}
+			container.Lock()
+			if len(container.requests) == 0 {
+				// after set this, we can safetly release it
+				container.usable = false
+			}
+			container.Unlock()
+			if !container.usable {
+				logger.Infof("begin release %s", container)
+				r.releaseCtn(container.fn, container.id)
+			}
+		}
+	}
+}
+
+func (r *Router) ctnReplicaNum4Fn(fn string) int {
+	ctns, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := ctns.(*RwLockSlice)
+	return len(ctnSlice.ctns)
 }
