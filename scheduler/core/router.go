@@ -89,9 +89,9 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 	}
 
 	nodeDesc := replyRn.Node
-	logger.Infof("ReserveNode %d Latency %d",
-		nodeDesc, (time.Now().UnixNano()-now)/1e6)
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
+	logger.Infof("ReserveNode %s Latency %d",
+		node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
 		return nil, err
@@ -142,8 +142,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	}
 	fn := rmObj.(string)
 	if (res.ErrorCode != "" || res.ErrorMessage != "") {
-		logger.Errorf("ctn error for %s, reqId %s, errorCd %s, errMsg %s",
-			fn, res.ID, res.ErrorCode, res.ErrorMessage)
+		logger.Errorf("ctn error for %s, ctnId %s, errorCd %s, errMsg %s",
+			fn, res.ContainerId, res.ErrorCode, res.ErrorMessage)
 		r.releaseCtn(fn, res.ContainerId)
 		return nil
 	}
@@ -211,8 +211,6 @@ func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
 func (r *Router) releaseCtn(fn string, ctnId string) {
 	r.ctn2info.Remove(ctnId)
 	go r.remoteReleaseCtn(ctnId)
-	// rm cnt2node
-	r.cnt2node.Remove(ctnId)
 
 	r.rmCtnFromFnMap(fn, ctnId)
 }
@@ -223,7 +221,10 @@ func (r *Router) remoteReleaseCtn(ctnId string) {
 		logger.Errorf("No cnt2node for %s", ctnId)
 		return
 	}
+	// rm cnt2node
+	r.cnt2node.Remove(ctnId)
 	node := nodeWrapper.(*ExtendedNodeInfo)
+	logger.Infof("node info %s for ctn %s", node, ctnId)
 	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelR()
 	req := &nspb.RemoveContainerRequest{

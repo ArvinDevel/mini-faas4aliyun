@@ -50,3 +50,10 @@ func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, err
 func (n *ExtendedNodeInfo) Close() {
 	n.conn.Close()
 }
+
+func (node *ExtendedNodeInfo) String() string {
+	return fmt.Sprintf("Node [%s,%s ],mem: %f/%f, %f, cpu:%f ,failed: %d ",
+		node.address, node.nodeID,
+		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
+		node.failedCnt)
+}

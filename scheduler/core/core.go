@@ -21,7 +21,6 @@ func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
 		finfo := finfoObj.(*model.FuncInfo)
 		memUsage := float64(finfo.MaxMemoryUsageInBytes) / float64(finfo.MemoryInBytes)
 		if memUsage > ctnMemHighThreshold {
-			logger.Infof("fn %s memusage %f -> MemIntensive", fn, memUsage)
 			return MemIntensive
 		}
 	}
