@@ -41,7 +41,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
-	funcExeMode := getFuncExeMode(req)
+	funcExeMode := r.getFuncExeMode(req)
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
 

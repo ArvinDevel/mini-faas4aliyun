@@ -13,9 +13,18 @@ import (
 	"time"
 )
 
-func getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
+func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
 	// todo use basic ratio FIRST PRIORITY ！use stats
-
+	fn := req.FunctionName
+	finfoObj, ok := r.fn2finfoMap.Get(fn)
+	if ok {
+		finfo := finfoObj.(*model.FuncInfo)
+		memUsage := float64(finfo.MaxMemoryUsageInBytes) / float64(finfo.MemoryInBytes)
+		if memUsage > ctnMemHighThreshold {
+			logger.Infof("fn %s memusage %f -> MemIntensive", fn, memUsage)
+			return MemIntensive
+		}
+	}
 	return ResourceLess
 }
 
