@@ -57,11 +57,16 @@ type Router struct {
 	rmClient    rmPb.ResourceManagerClient
 }
 
+type AcctId struct {
+	sync.RWMutex
+	acctId string
+}
+
 var slack int64 = 5 * 1000 * 1000
 
 var mockStr = "mock-reqId/acctId"
 
-var mockAccountId = mockStr
+var acctId AcctId = AcctId{}
 
 var getStatsReq = &nspb.GetStatsRequest{
 	RequestId: mockStr,

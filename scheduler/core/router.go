@@ -73,6 +73,10 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 
 func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	// todo use adaquate timeout
+	acctId.RLock()
+	if acctId.acctId == ""{
+		logger.Infof("begin assgin %s to acctId",accountId)
+	}
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
