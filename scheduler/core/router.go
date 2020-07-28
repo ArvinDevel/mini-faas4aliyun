@@ -90,8 +90,8 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 
 	nodeDesc := replyRn.Node
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
-	logger.Infof("ReserveNode %s Latency %d",
-		node, (time.Now().UnixNano()-now)/1e6)
+	logger.Infof("ReserveNode accntId %s %s Latency %d",
+		accountId, node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
 		return nil, err
