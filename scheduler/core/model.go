@@ -58,7 +58,7 @@ type Router struct {
 }
 
 type AcctId struct {
-	sync.RWMutex
+	sync.Mutex
 	acctId string
 }
 

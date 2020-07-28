@@ -46,6 +46,22 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
+	if r.nodeMap.IsEmpty() {
+		acctId.Lock()
+		if acctId.acctId == "" {
+			logger.Infof("begin assgin %s to acctId", accountId)
+			acctId.acctId = accountId
+			node, err := r.remoteGetNode(accountId, memoryReq)
+			if (err != nil) {
+				logger.Errorf("first aquire node fail %s", err)
+				acctId.Unlock()
+				return nil, err
+			}
+			acctId.Unlock()
+			return node, nil
+		}
+		acctId.Unlock()
+	}
 	values := []*ExtendedNodeInfo{}
 	for _, key := range r.nodeMap.Keys() {
 		nmObj, _ := r.nodeMap.Get(key)
@@ -73,10 +89,6 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 
 func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	// todo use adaquate timeout
-	acctId.RLock()
-	if acctId.acctId == ""{
-		logger.Infof("begin assgin %s to acctId",accountId)
-	}
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
@@ -94,8 +106,8 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 
 	nodeDesc := replyRn.Node
 	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
-	logger.Infof("ReserveNode %s Latency %d",
-		node, (time.Now().UnixNano()-now)/1e6)
+	logger.Infof("ReserveNode accntId %s %s Latency %d",
+		accountId, node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
 		return nil, err
