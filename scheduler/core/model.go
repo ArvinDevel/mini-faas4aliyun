@@ -66,7 +66,7 @@ var slack int64 = 5 * 1000 * 1000
 
 var mockStr = "mock-reqId/acctId"
 
-var acctId AcctId = AcctId{}
+var acctId = AcctId{}
 var staticAcctId = "1001210857578086"
 
 var getStatsReq = &nspb.GetStatsRequest{
@@ -82,6 +82,9 @@ var parallelReqNum = 10
 var nodeCpuHighThreshold = 150.0
 var nodeMemHighThreshold = 0.75
 var nodeFailedCntThreshold = 10
+
+var calQpsDuration = time.Duration(time.Second * 10)
+var funChan = make(chan string, 10000)
 
 // util/helper
 func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {

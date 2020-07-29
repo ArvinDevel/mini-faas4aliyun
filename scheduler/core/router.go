@@ -17,6 +17,7 @@ import (
 
 // todo 1 use 30s accumulated req and max static locate;
 // 2 dynamic reschedule when req tps is small
+// 3 auto aquire node when node is not necessary to avoid shepe, 1s ticker?
 // 4. record qps and dump node usage every 3 min?
 func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 	return &Router{
@@ -35,11 +36,13 @@ func (r *Router) Start() {
 		go r.remoteGetNode(staticAcctId, 0)
 	}
 	go r.UpdateStats()
+	go r.CalQps()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
+	funChan <- fn
 	r.requestMap.Set(req.RequestId, fn)
 	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
@@ -79,6 +82,12 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	// todo best fit
 	for _, node := range values {
 		node.Lock()
+		// todo exclude memintensive fn
+		if node.AvailableMemoryInBytes > 2*float64(memoryReq) {
+			node.availableMemInBytes -= memoryReq
+			node.Unlock()
+			return node, nil
+		}
 		if node.availableMemInBytes > memoryReq {
 			node.availableMemInBytes -= memoryReq
 			node.Unlock()
@@ -277,6 +286,11 @@ func (r *Router) remoteReleaseNode(nid string) {
 
 func sortNodeByUsage(values []*ExtendedNodeInfo) {
 	sort.Slice(values, func(i, j int) bool {
+		if (values[i].AvailableMemoryInBytes > 0 && values[j].AvailableMemoryInBytes > 0) {
+			if (values[i].AvailableMemoryInBytes < values[j].AvailableMemoryInBytes) {
+				return true
+			}
+		}
 		if (values[i].availableMemInBytes < values[j].availableMemInBytes) {
 			return true
 		}

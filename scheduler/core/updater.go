@@ -66,3 +66,36 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		container.Unlock()
 	}
 }
+
+func (r *Router) CalQps() {
+	// get stats async predicolly
+	ticker := time.NewTicker(calQpsDuration)
+	defer ticker.Stop()
+	defer close(funChan)
+	globalFn2ctn := make(map[string]int)
+	fn2ctn := make(map[string]int)
+
+	for {
+		<-ticker.C
+		select {
+		case fn := <-funChan:
+			if _, ok := globalFn2ctn[fn]; ok {
+				globalFn2ctn[fn] += 1
+			} else {
+				globalFn2ctn[fn] = 1
+			}
+			if _, ok := fn2ctn[fn]; ok {
+				fn2ctn[fn] += 1
+			} else {
+				fn2ctn[fn] = 1
+			}
+		case <-time.After(time.Millisecond):
+			break
+		}
+		logger.Infof("fn qps local %s, global %s",
+			fn2ctn, globalFn2ctn)
+		for k := range fn2ctn {
+			delete(fn2ctn, k)
+		}
+	}
+}
