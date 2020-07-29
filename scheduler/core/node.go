@@ -52,8 +52,8 @@ func (n *ExtendedNodeInfo) Close() {
 }
 
 func (node *ExtendedNodeInfo) String() string {
-	return fmt.Sprintf("Node [%s,%s ],mem: %f/%f, %f, cpu:%f ,failed: %d ",
+	return fmt.Sprintf("Node [%s,%s ],mem:%f/%f,%f, %f, cpu:%f ,failed: %d ",
 		node.address, node.nodeID,
-		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
+		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.availableMemInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
 		node.failedCnt)
 }

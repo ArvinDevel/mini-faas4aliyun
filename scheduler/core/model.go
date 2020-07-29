@@ -67,6 +67,7 @@ var slack int64 = 5 * 1000 * 1000
 var mockStr = "mock-reqId/acctId"
 
 var acctId AcctId = AcctId{}
+var staticAcctId = "1001210857578086"
 
 var getStatsReq = &nspb.GetStatsRequest{
 	RequestId: mockStr,

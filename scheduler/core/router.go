@@ -15,6 +15,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// todo 1 use 30s accumulated req and max static locate;
+// 2 dynamic reschedule when req tps is small
+// 4. record qps and dump node usage every 3 min?
 func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 	return &Router{
 		nodeMap:     cmap.New(),
@@ -28,7 +31,9 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	// todo swarm up
+	for i := 0; i < 5; i++ {
+		go r.remoteGetNode(staticAcctId, 0)
+	}
 	go r.UpdateStats()
 }
 
@@ -42,6 +47,8 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
 	funcExeMode := r.getFuncExeMode(req)
+	logger.Infof("AcquireContainer fn %s, timeout %f, mem %d ,mode %v",
+		fn, req.FunctionConfig.TimeoutInMs, req.FunctionConfig.MemoryInBytes, funcExeMode)
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
 
@@ -140,6 +147,7 @@ func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*Extended
 		bVal := bMem*0.8 + (200-bCpu)*0.2
 		return aVal > bVal
 	})
+	logger.Infof("fallbackUseLocalNode %v", localNodes[0])
 	return localNodes[0], nil
 }
 
