@@ -50,7 +50,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
 	funcExeMode := r.getFuncExeMode(req)
-	logger.Infof("AcquireContainer fn %s, timeout %f, mem %d ,mode %v",
+	logger.Infof("AcquireContainer fn %s, timeout %d, mem %d ,mode %v",
 		fn, req.FunctionConfig.TimeoutInMs, req.FunctionConfig.MemoryInBytes, funcExeMode)
 	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
@@ -286,6 +286,12 @@ func (r *Router) remoteReleaseNode(nid string) {
 
 func sortNodeByUsage(values []*ExtendedNodeInfo) {
 	sort.Slice(values, func(i, j int) bool {
+		if values[i].CpuUsagePct > nodeCpuHighThreshold {
+			return false
+		}
+		if values[i].failedCnt > nodeFailedCntThreshold {
+			return false
+		}
 		if (values[i].AvailableMemoryInBytes > 0 && values[j].AvailableMemoryInBytes > 0) {
 			if (values[i].AvailableMemoryInBytes < values[j].AvailableMemoryInBytes) {
 				return true
