@@ -292,6 +292,9 @@ func sortNodeByUsage(values []*ExtendedNodeInfo) {
 		if values[i].failedCnt > nodeFailedCntThreshold {
 			return false
 		}
+		if values[i].MemoryUsageInBytes/values[i].TotalMemoryInBytes > nodeMemHighThreshold {
+			return false
+		}
 		if (values[i].AvailableMemoryInBytes > 0 && values[j].AvailableMemoryInBytes > 0) {
 			if (values[i].AvailableMemoryInBytes < values[j].AvailableMemoryInBytes) {
 				return true
