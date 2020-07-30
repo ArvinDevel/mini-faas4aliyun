@@ -82,8 +82,8 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	// todo best fit
 	for _, node := range values {
 		node.Lock()
-		// todo exclude memintensive fn
-		if node.AvailableMemoryInBytes > 2*float64(memoryReq) {
+		// todo exclude memintensive fn 限制超卖上限
+		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
 			node.availableMemInBytes -= memoryReq
 			node.Unlock()
 			return node, nil
@@ -295,12 +295,16 @@ func sortNodeByUsage(values []*ExtendedNodeInfo) {
 		if values[i].MemoryUsageInBytes/values[i].TotalMemoryInBytes > nodeMemHighThreshold {
 			return false
 		}
+		if values[i].reqCnt > 100 {
+			return false
+		}
 		if (values[i].AvailableMemoryInBytes > 0 && values[j].AvailableMemoryInBytes > 0) {
-			if (values[i].AvailableMemoryInBytes < values[j].AvailableMemoryInBytes) {
+			// choose 松裕的，防止雪崩，压垮小node
+			if (values[i].AvailableMemoryInBytes > values[j].AvailableMemoryInBytes) {
 				return true
 			}
 		}
-		if (values[i].availableMemInBytes < values[j].availableMemInBytes) {
+		if (values[i].availableMemInBytes > values[j].availableMemInBytes) {
 			return true
 		}
 		return values[i].failedCnt < values[j].failedCnt

@@ -168,6 +168,9 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 		return nil, err
 	}
 
+	node.Lock()
+	node.reqCnt += 1
+	node.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	replyC, err := node.CreateContainer(ctx, &nsPb.CreateContainerRequest{
@@ -189,6 +192,7 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 	if lastFailedCnt > 0 {
 		node.Lock()
 		node.failedCnt = 0
+		node.reqCnt -= 1
 		node.Unlock()
 		logger.Infof("Reset node %s fail cnt from %d to 0", node.address, lastFailedCnt)
 	}
