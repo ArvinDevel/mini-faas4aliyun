@@ -77,8 +77,10 @@ func (r *Router) CalQps() {
 
 	for {
 		<-ticker.C
-		select {
-		case fn := <-funChan:
+		cl := len(funChan)
+		logger.Infof("chan len %d", len(funChan))
+		for i := 0; i < cl; i++ {
+			fn := <-funChan
 			if _, ok := globalFn2ctn[fn]; ok {
 				globalFn2ctn[fn] += 1
 			} else {
@@ -89,10 +91,8 @@ func (r *Router) CalQps() {
 			} else {
 				fn2ctn[fn] = 1
 			}
-		case <-time.After(time.Millisecond):
-			break
 		}
-		logger.Infof("fn qps local %s, global %s",
+		logger.Infof("fn qps local %v, global %v",
 			fn2ctn, globalFn2ctn)
 		for k := range fn2ctn {
 			delete(fn2ctn, k)
