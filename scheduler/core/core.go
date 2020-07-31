@@ -161,6 +161,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 
 // if no idle container exists
 func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*ExtendedContainerInfo, error) {
+	now := time.Now().UnixNano()
 	var res *ExtendedContainerInfo
 
 	node, err := r.getNode(req.AccountId, req.FunctionConfig.MemoryInBytes)
@@ -213,6 +214,8 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)
+	logger.Infof("createNewCntFromNode for %s to %s,lat %d ",
+		req.FunctionName, node.address, (time.Now().UnixNano()-now)/1e6)
 	return res, nil
 }
 

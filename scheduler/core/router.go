@@ -38,6 +38,12 @@ func (r *Router) Start() {
 	}
 	go r.UpdateStats()
 	go r.CalQps()
+	go func() {
+		for i := 0; i < 10; i++ {
+			time.Sleep(time.Duration(30 * time.Second))
+			go r.remoteGetNode(staticAcctId, 0)
+		}
+	}()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
@@ -70,18 +76,6 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	for i := 0; i < length; i++ {
 		idx := random.Intn(length)
 		node := values[idx]
-		if node.CpuUsagePct > nodeCpuHighThreshold {
-			logger.Warningf("getNode CpuUsagePct fail %d", node.CpuUsagePct)
-			continue
-		}
-		if node.failedCnt > nodeFailedCntThreshold {
-			logger.Warningf("getNode failedCnt fail %d", node.failedCnt)
-			continue
-		}
-		if node.MemoryUsageInBytes/node.TotalMemoryInBytes > nodeMemHighThreshold {
-			logger.Warningf("getNode MemoryUsageInBytes fail %d %d", node.MemoryUsageInBytes, node.TotalMemoryInBytes)
-			continue
-		}
 		node.Lock()
 		// todo exclude memintensive fn 限制超卖上限
 		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
