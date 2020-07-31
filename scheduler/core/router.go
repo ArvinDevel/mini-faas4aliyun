@@ -3,6 +3,7 @@ package core
 import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
+	"math/rand"
 	"sort"
 	"time"
 
@@ -32,7 +33,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		go r.remoteGetNode(staticAcctId, 0)
 	}
 	go r.UpdateStats()
@@ -40,6 +41,7 @@ func (r *Router) Start() {
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+	now := time.Now().UnixNano()
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
 	funChan <- fn
@@ -50,37 +52,36 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
 	funcExeMode := r.getFuncExeMode(req)
-	logger.Infof("AcquireContainer fn %s, timeout %d, mem %d ,mode %v",
-		fn, req.FunctionConfig.TimeoutInMs, req.FunctionConfig.MemoryInBytes, funcExeMode)
-	return r.pickCntAccording2ExeMode(funcExeMode, req)
+	if 60000 != req.FunctionConfig.TimeoutInMs {
+		logger.Errorf("Not 60s timeout")
+	}
+	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)
+	logger.Infof("AcquireContainer fn %s, mem %d ,mode %v, lat %d",
+		fn, req.FunctionConfig.MemoryInBytes, funcExeMode, (time.Now().UnixNano()-now)/1e6)
+	return result, err
 }
 
+var values = []*ExtendedNodeInfo{}
+var random = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
-	if r.nodeMap.IsEmpty() {
-		acctId.Lock()
-		if acctId.acctId == "" {
-			logger.Infof("begin assgin %s to acctId", accountId)
-			acctId.acctId = accountId
-			node, err := r.remoteGetNode(accountId, memoryReq)
-			if (err != nil) {
-				logger.Errorf("first aquire node fail %s", err)
-				acctId.Unlock()
-				return nil, err
-			}
-			acctId.Unlock()
-			return node, nil
-		}
-		acctId.Unlock()
-	}
-	values := []*ExtendedNodeInfo{}
-	for _, key := range r.nodeMap.Keys() {
-		nmObj, _ := r.nodeMap.Get(key)
-		node := nmObj.(*ExtendedNodeInfo)
-		values = append(values, node)
-	}
-	sortNodeByUsage(values)
+	length := len(values)
 	// todo best fit
-	for _, node := range values {
+	for i := 0; i < length; i++ {
+		idx := random.Intn(length)
+		node := values[idx]
+		if node.CpuUsagePct > nodeCpuHighThreshold {
+			logger.Warningf("getNode CpuUsagePct fail %d", node.CpuUsagePct)
+			continue
+		}
+		if node.failedCnt > nodeFailedCntThreshold {
+			logger.Warningf("getNode failedCnt fail %d", node.failedCnt)
+			continue
+		}
+		if node.MemoryUsageInBytes/node.TotalMemoryInBytes > nodeMemHighThreshold {
+			logger.Warningf("getNode MemoryUsageInBytes fail %d %d", node.MemoryUsageInBytes, node.TotalMemoryInBytes)
+			continue
+		}
 		node.Lock()
 		// todo exclude memintensive fn 限制超卖上限
 		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
@@ -96,11 +97,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		node.Unlock()
 	}
 	logger.Infof("current nodes %s can't affoard %d", values, memoryReq)
-	node, err := r.remoteGetNode(accountId, memoryReq)
-	if (err != nil) {
-		return r.fallbackUseLocalNode(values)
-	}
-	return node, nil
+	return r.fallbackUseLocalNode(values)
 }
 
 func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
@@ -126,17 +123,17 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 		accountId, node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
 		go r.remoteReleaseNode(nodeDesc.Id)
+		time.Sleep(time.Duration(30 * time.Second))
+		logger.Errorf("ReserveNode fail", err)
+		go r.remoteGetNode(accountId, 0)
 		return nil, err
 	}
+	values = append(values, node)
 	r.nodeMap.Set(nodeDesc.Id, node)
 	return node, nil
 }
 
 func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*ExtendedNodeInfo, error) {
-	if len(localNodes) == 0 {
-		return nil, errors.Errorf("No local node can be reused")
-	}
-
 	// choose more
 	sort.Slice(localNodes, func(i, j int) bool {
 		if localNodes[i].CpuUsagePct > nodeCpuHighThreshold {
