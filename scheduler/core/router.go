@@ -32,9 +32,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	for i := 0; i < 10; i++ {
-		go r.remoteGetNode(staticAcctId)
-	}
+	r.warmup(10)
 	go r.UpdateStats()
 	go r.CalQps()
 	//go func() {
@@ -53,6 +51,16 @@ func (r *Router) Start() {
 	}()
 }
 
+func (r *Router) warmup(num int) {
+	for i := 0; i < num; i++ {
+		go func() {
+			_, err := r.remoteGetNode(staticAcctId)
+			if err != nil {
+				r.remoteGetNode(staticAcctId)
+			}
+		}()
+	}
+}
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	now := time.Now().UnixNano()
 	// Save the name for later ReturnContainer
@@ -98,8 +106,16 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	}
 	logger.Infof("current nodes %s can't affoard %d", values, memoryReq)
 	// only used for local
-	//r.remoteGetNode(accountId)
-	return r.fallbackUseLocalNode(values)
+	if accountId != staticAcctId {
+		logger.Errorf("acctId changed from %s to %s", staticAcctId, accountId)
+		staticAcctId = accountId
+		r.remoteGetNode(accountId)
+		r.warmup(9)
+	}
+	if len(values) > 0 {
+		return r.fallbackUseLocalNode()
+	}
+	return nil, errors.Errorf("NO NODE!")
 }
 
 func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
@@ -133,28 +149,28 @@ func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	return node, nil
 }
 
-func (r *Router) fallbackUseLocalNode(localNodes []*ExtendedNodeInfo) (*ExtendedNodeInfo, error) {
+func (r *Router) fallbackUseLocalNode() (*ExtendedNodeInfo, error) {
 	// choose more
-	sort.Slice(localNodes, func(i, j int) bool {
-		if localNodes[i].CpuUsagePct > nodeCpuHighThreshold {
+	sort.Slice(values, func(i, j int) bool {
+		if values[i].CpuUsagePct > nodeCpuHighThreshold {
 			return false
 		}
-		if localNodes[i].failedCnt > nodeFailedCntThreshold {
+		if values[i].failedCnt > nodeFailedCntThreshold {
 			return false
 		}
-		if localNodes[i].MemoryUsageInBytes/localNodes[i].TotalMemoryInBytes > nodeMemHighThreshold {
+		if values[i].MemoryUsageInBytes/values[i].TotalMemoryInBytes > nodeMemHighThreshold {
 			return false
 		}
-		aMem := localNodes[i].AvailableMemoryInBytes
-		aCpu := localNodes[i].CpuUsagePct
+		aMem := values[i].AvailableMemoryInBytes
+		aCpu := values[i].CpuUsagePct
 		aVal := aMem*0.8 + (200-aCpu)*0.2
-		bMem := localNodes[j].AvailableMemoryInBytes
-		bCpu := localNodes[j].CpuUsagePct
+		bMem := values[j].AvailableMemoryInBytes
+		bCpu := values[j].CpuUsagePct
 		bVal := bMem*0.8 + (200-bCpu)*0.2
 		return aVal > bVal
 	})
-	logger.Infof("fallbackUseLocalNode %v", localNodes[0])
-	return localNodes[0], nil
+	logger.Infof("fallbackUseLocalNode %v", values[0])
+	return values[0], nil
 }
 
 func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
