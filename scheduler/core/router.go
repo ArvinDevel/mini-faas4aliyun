@@ -3,7 +3,6 @@ package core
 import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
-	"math/rand"
 	"sort"
 	"time"
 
@@ -52,9 +51,6 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 	})
 	funcExeMode := r.getFuncExeMode(req)
-	if 60000 != req.FunctionConfig.TimeoutInMs {
-		logger.Errorf("Not 60s timeout")
-	}
 	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)
 	logger.Infof("AcquireContainer fn %s, mem %d ,mode %v, lat %d",
 		fn, req.FunctionConfig.MemoryInBytes, funcExeMode, (time.Now().UnixNano()-now)/1e6)
@@ -62,7 +58,6 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 var values = []*ExtendedNodeInfo{}
-var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	length := len(values)
@@ -209,9 +204,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("fn %s %d %d, container: %f %f %f",
-		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
-		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
+	logger.Infof("ReturnContainer fn %s %d %d, ctn: %v",
+		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release
