@@ -33,7 +33,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 
 func (r *Router) Start() {
 	for i := 0; i < 10; i++ {
-		go r.remoteGetNode(staticAcctId, 0)
+		go r.remoteGetNode(staticAcctId)
 	}
 	go r.UpdateStats()
 	go r.CalQps()
@@ -53,9 +53,10 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	r.requestMap.Set(req.RequestId, fn)
 	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
-		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
-		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
-		Handler:       req.FunctionConfig.Handler,
+		TimeoutInMs:     req.FunctionConfig.TimeoutInMs,
+		MemoryInBytes:   req.FunctionConfig.MemoryInBytes,
+		Handler:         req.FunctionConfig.Handler,
+		MinDurationInMs: 2000000,
 	})
 	funcExeMode := r.getFuncExeMode(req)
 	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)
@@ -90,8 +91,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	return r.fallbackUseLocalNode(values)
 }
 
-func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
-	// todo use adaquate timeout
+func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()
 	now := time.Now().UnixNano()
@@ -108,7 +108,7 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 	}
 
 	nodeDesc := replyRn.Node
-	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes-memoryReq)
+	node, err := NewNode(nodeDesc.Id, nodeDesc.Address, nodeDesc.NodeServicePort, nodeDesc.MemoryInBytes)
 	logger.Infof("ReserveNode accntId %s %s Latency %d",
 		accountId, node, (time.Now().UnixNano()-now)/1e6)
 	if err != nil {
@@ -171,23 +171,28 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		return errors.Errorf("no func info for the fn %s", fn)
 	}
 	finfo := finfoObj.(*model.FuncInfo)
-	lastDuration := finfo.DurationInMs
-	lastMaxMem := finfo.MaxMemoryUsageInBytes
 
 	curentDuration := res.DurationInMs
 	curentMaxMem := res.MaxMemoryUsageInBytes
 
-	if (curentDuration > lastDuration) {
-		//logger.Infof("ReturnContainer ctn for %s, update info 2: time %d",
-		//	fn, curentDuration)
-		finfo.DurationInMs = curentDuration
+	if (curentDuration > finfo.MaxDurationInMs) {
+		finfo.MaxDurationInMs = curentDuration
 	}
 
-	if (curentMaxMem > lastMaxMem) {
-		//logger.Infof("ReturnContainer ctn for %s, update info 2: mem %d, req mem %d",
-		//	fn, curentMaxMem, finfo.MemoryInBytes)
+	if (curentMaxMem > finfo.MaxMemoryUsageInBytes) {
 		finfo.MaxMemoryUsageInBytes = curentMaxMem
 		finfo.ActualUsedMemInBytes = curentMaxMem + slack
+	}
+
+	if curentDuration < finfo.MinDurationInMs {
+		finfo.MinDurationInMs = curentDuration
+	}
+
+	if finfo.AvgDurationInMs > 0 {
+		// not accurate
+		finfo.AvgDurationInMs = (finfo.AvgDurationInMs + curentDuration) / 2
+	} else {
+		finfo.AvgDurationInMs = curentDuration
 	}
 
 	ctnInfo, ok := r.ctn2info.Get(res.ContainerId)
@@ -198,8 +203,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer fn %s %d %d, ctn: %v",
-		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs, container)
+	logger.Infof("ReturnContainer fn %s %d %d, %v",
+		fn, finfo.MaxMemoryUsageInBytes, finfo.MaxDurationInMs, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

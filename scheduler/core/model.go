@@ -33,8 +33,9 @@ type ExtendedContainerInfo struct {
 	MemoryUsageInBytes float64 `protobuf:"varint,3,opt,name=memory_usage_in_bytes,json=memoryUsageInBytes,proto3" json:"memory_usage_in_bytes,omitempty"`
 	CpuUsagePct        float64
 
-	fn string
+	fn         string
 	outlierCnt int
+	usable     bool `whether is usable used for indicate deleting`
 }
 
 type RwLockSlice struct {
@@ -71,6 +72,8 @@ var getStatsReq = &nspb.GetStatsRequest{
 }
 
 var fetchStatsDuration = time.Duration(time.Millisecond * 300)
+// todo ajustment according to preorica
+var releaseResourcesDuration = time.Duration(time.Second * 3)
 
 var ctnCpuHighThreshold = 0.5
 var ctnMemHighThreshold = 0.6
@@ -100,8 +103,8 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 }
 
 func (ctn *ExtendedContainerInfo) String() string {
-	return fmt.Sprintf("Ctn [%s,%s],mem:%f/%f, cpu:%f ,req Ctn: %d ",
-		ctn.address, ctn.id,
+	return fmt.Sprintf("Ctn [%s,%s,%v],mem:%f/%f, cpu:%f ,req Ctn: %d ",
+		ctn.address, ctn.id, ctn.usable,
 		ctn.MemoryUsageInBytes, ctn.ReqMemoryInBytes, ctn.CpuUsagePct,
 		len(ctn.requests))
 }

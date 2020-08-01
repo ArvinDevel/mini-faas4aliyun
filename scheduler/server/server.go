@@ -58,16 +58,7 @@ func (s *Server) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 func (s *Server) ReturnContainer(ctx context.Context, req *pb.ReturnContainerRequest) (*pb.ReturnContainerReply, error) {
-	//logger.WithFields(logger.Fields{
-	//	"Operation":             "ReturnContainer",
-	//	"ContainerId":           req.ContainerId,
-	//	"RequestId":             req.RequestId,
-	//	"ErrorCode":             req.ErrorCode,
-	//	"MaxMemoryUsageInBytes": req.MaxMemoryUsageInBytes,
-	//	"DurationInMs":          req.DurationInMs / 1e6,
-	//}).Infof("")
-	now := time.Now().UnixNano()
-	err := s.router.ReturnContainer(ctx, &model.ResponseInfo{
+	go s.router.ReturnContainer(ctx, &model.ResponseInfo{
 		ID:                    req.RequestId,
 		ContainerId:           req.ContainerId,
 		DurationInMs:          req.DurationInNanos / 1e6,
@@ -75,14 +66,6 @@ func (s *Server) ReturnContainer(ctx context.Context, req *pb.ReturnContainerReq
 		ErrorCode:             req.ErrorCode,
 		ErrorMessage:          req.ErrorMessage,
 	})
-	if err != nil {
-		logger.WithFields(logger.Fields{
-			"Operation": "ReturnContainer",
-			"Latency":   (time.Now().UnixNano() - now) / 1e6,
-			"Error":     true,
-		}).Errorf("Failed to ReturnContainer due to %v", err)
-		return nil, err
-	}
 
 	return &pb.ReturnContainerReply{}, nil
 }

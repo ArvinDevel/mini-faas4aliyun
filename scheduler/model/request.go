@@ -33,8 +33,9 @@ type FuncInfo struct {
 
 	// dynamic info(runtime stats)
 	//  use max stats todo avg?
-	// todo add more stats, max, avg,current?
-	DurationInMs          int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
+	MinDurationInMs       int64
+	AvgDurationInMs       int64
+	MaxDurationInMs       int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
 	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
 
 	ActualUsedMemInBytes int64

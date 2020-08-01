@@ -2,16 +2,12 @@ package core
 
 import (
 	"aliyun/serverless/mini-faas/scheduler/model"
+	pb "aliyun/serverless/mini-faas/scheduler/proto"
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"github.com/satori/go.uuid"
 	"time"
-	pb "aliyun/serverless/mini-faas/scheduler/proto"
 )
-
-func (node *ExtendedNodeInfo) UpdateStats(nodeID, address string, port, memory int64) {
-	//node.GetStats()
-}
 
 func (r *Router) UpdateStats() {
 	// get stats async predicolly
@@ -128,7 +124,43 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
 				r.boostCtnAction(fn)
+				go r.addNewNodeAndCtnsAction(fn)
 			}
+		}
+	}
+}
+
+func (r *Router) addNewNodeAndCtnsAction(fn string) {
+	logger.Infof("exe addNewNodeAndCtnsAction for %s ", fn)
+	var node *ExtendedNodeInfo
+	for
+	{
+		if n, err := r.remoteGetNode(staticAcctId); err == nil {
+			node = n
+			break
+		}
+		time.Sleep(time.Second * 30)
+	}
+	finfoObj, ok := r.fn2finfoMap.Get(fn)
+	if !ok {
+		logger.Errorf("no func info for the fn %s when addNewNodeAndCtnsAction", fn)
+		return
+	}
+	finfo := finfoObj.(*model.FuncInfo)
+
+	ctnSize := node.availableMemInBytes / finfo.MaxMemoryUsageInBytes
+
+	for i := int64(0); i < ctnSize; i++ {
+		req := r.constructAcquireCtnReq(fn)
+		if req == nil {
+			logger.Errorf("constructAcquireCtnReq when addNewNodeAndCtnsAction for %s", fn)
+			continue
+		}
+		ctn, err := r.CreateNewCntFromNode(req)
+		if err == nil {
+			ctn.Lock()
+			delete(ctn.requests, req.RequestId)
+			ctn.Unlock()
 		}
 	}
 }
@@ -224,14 +256,49 @@ func (r *Router) outputOutlierCtn(fn string) {
 		if ctn.CpuUsagePct > avgCpuThreshold {
 			ctn.outlierCnt += 1
 			if ctn.outlierCnt < 1000 {
-				logger.Infof("ctn %v cpu over threshold %f", ctn, avgCpuThreshold)
+				logger.Infof("ctn %v for %s cpu over threshold %f", ctn, fn, avgCpuThreshold)
 			}
 		}
 		if ctn.MemoryUsageInBytes > avgMemThreshold {
 			ctn.outlierCnt += 1
 			if ctn.outlierCnt < 1000 {
-				logger.Infof("ctn %v mem over threshold %f", ctn, avgMemThreshold)
+				logger.Infof("ctn %v for %s mem over threshold %f", ctn, fn, avgMemThreshold)
 			}
 		}
 	}
+}
+
+func (r *Router) ReleaseCtnResource() {
+	// release unused ctn async predicolly:only keep one replica
+	// NOT APPLYED for mem intensive:
+	ticker := time.NewTicker(releaseResourcesDuration)
+	defer ticker.Stop()
+	for {
+		<-ticker.C
+		for _, key := range r.ctn2info.Keys() {
+			ctnInfo, _ := r.ctn2info.Get(key)
+			container := ctnInfo.(*ExtendedContainerInfo)
+			fn := container.fn
+			// consider fn container replica, todo consider fun frequency and duration
+			if r.ctnReplicaNum4Fn(fn) < 2 {
+				continue
+			}
+			container.Lock()
+			if len(container.requests) == 0 {
+				// after set this, we can safetly release it
+				container.usable = false
+			}
+			container.Unlock()
+			if !container.usable {
+				logger.Infof("begin release %s", container)
+				r.releaseCtn(container.fn, container.id)
+			}
+		}
+	}
+}
+
+func (r *Router) ctnReplicaNum4Fn(fn string) int {
+	ctns, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := ctns.(*RwLockSlice)
+	return len(ctnSlice.ctns)
 }
