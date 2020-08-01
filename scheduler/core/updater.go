@@ -110,6 +110,7 @@ var cntThreshold = reqQpsThreshold*10 - 5
 
 func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
+		r.checkFn(fn)
 		if cnt > cntThreshold {
 			r.outputOutlierCtn(fn)
 			finfoObj, ok := r.fn2finfoMap.Get(fn)
@@ -268,6 +269,23 @@ func (r *Router) outputOutlierCtn(fn string) {
 	}
 }
 
+func (r *Router) checkFn(fn string) {
+	finfoObj, ok := r.fn2finfoMap.Get(fn)
+	if !ok {
+		logger.Errorf("no func info for the fn %s when checkFn", fn)
+		return
+	}
+	finfo := finfoObj.(*model.FuncInfo)
+	ratio := float64(finfo.AvgDurationInMs) / float64(finfo.MinDurationInMs)
+	if ratio > 1.2 && !finfo.TimeOverThreshold {
+		logger.Warningf("fn %s time over 20%, change state 2 over", fn)
+		finfo.TimeOverThreshold = true
+	}
+	if ratio <= 1.2 && finfo.TimeOverThreshold {
+		logger.Warningf("fn %s time over recover , change state ", fn)
+		finfo.TimeOverThreshold = false
+	}
+}
 func (r *Router) ReleaseCtnResource() {
 	// release unused ctn async predicolly:only keep one replica
 	// NOT APPLYED for mem intensive:

@@ -53,10 +53,11 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	r.requestMap.Set(req.RequestId, fn)
 	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
-		TimeoutInMs:     req.FunctionConfig.TimeoutInMs,
-		MemoryInBytes:   req.FunctionConfig.MemoryInBytes,
-		Handler:         req.FunctionConfig.Handler,
-		MinDurationInMs: 2000000,
+		TimeoutInMs:       req.FunctionConfig.TimeoutInMs,
+		MemoryInBytes:     req.FunctionConfig.MemoryInBytes,
+		Handler:           req.FunctionConfig.Handler,
+		MinDurationInMs:   2000000,
+		TimeOverThreshold: false,
 	})
 	funcExeMode := r.getFuncExeMode(req)
 	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)

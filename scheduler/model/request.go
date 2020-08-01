@@ -43,4 +43,5 @@ type FuncInfo struct {
 	CallMode FuncCallMode
 	DenseCnt int
 	Handler  string
+	TimeOverThreshold bool
 }
