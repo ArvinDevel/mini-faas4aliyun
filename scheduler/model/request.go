@@ -1,5 +1,15 @@
 package model
 
+type FuncCallMode int
+
+//pre do action(swarm up or release quickly) according to stats or predict
+const (
+	Unkown     FuncCallMode = iota
+	Periodical  // 周期型
+	Sparse      // 稀疏型
+	Dense       // 密集型
+)
+
 type RequestInfo struct {
 	ID               string
 	FunctionName     string
@@ -23,8 +33,13 @@ type FuncInfo struct {
 
 	// dynamic info(runtime stats)
 	//  use max stats todo avg?
+	// todo add more stats, max, avg,current?
 	DurationInMs          int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
 	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
 
 	ActualUsedMemInBytes int64
+
+	CallMode FuncCallMode
+	DenseCnt int
+	Handler  string
 }

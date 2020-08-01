@@ -38,12 +38,12 @@ func (r *Router) Start() {
 	}
 	go r.UpdateStats()
 	go r.CalQps()
-	go func() {
-		for i := 0; i < 10; i++ {
-			time.Sleep(time.Duration(30 * time.Second))
-			go r.remoteGetNode(staticAcctId, 0)
-		}
-	}()
+	//go func() {
+	//	for i := 0; i < 10; i++ {
+	//		time.Sleep(time.Duration(30 * time.Second))
+	//		go r.remoteGetNode(staticAcctId, 0)
+	//	}
+	//}()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
@@ -56,11 +56,9 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
 		TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes: req.FunctionConfig.MemoryInBytes,
+		Handler:       req.FunctionConfig.Handler,
 	})
 	funcExeMode := r.getFuncExeMode(req)
-	if 60000 != req.FunctionConfig.TimeoutInMs {
-		logger.Errorf("Not 60s timeout")
-	}
 	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)
 	logger.Infof("AcquireContainer fn %s, mem %d ,mode %v, lat %d",
 		fn, req.FunctionConfig.MemoryInBytes, funcExeMode, (time.Now().UnixNano()-now)/1e6)
@@ -119,7 +117,6 @@ func (r *Router) remoteGetNode(accountId string, memoryReq int64) (*ExtendedNode
 		go r.remoteReleaseNode(nodeDesc.Id)
 		time.Sleep(time.Duration(30 * time.Second))
 		logger.Errorf("ReserveNode fail", err)
-		go r.remoteGetNode(accountId, 0)
 		return nil, err
 	}
 	values = append(values, node)
@@ -173,7 +170,7 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	}
 	finfoObj, ok := r.fn2finfoMap.Get(fn)
 	if !ok {
-		return errors.Errorf("no func info for the fn %s", finfoObj)
+		return errors.Errorf("no func info for the fn %s", fn)
 	}
 	finfo := finfoObj.(*model.FuncInfo)
 	lastDuration := finfo.DurationInMs
@@ -203,9 +200,9 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("fn %s %d %d, container: %f %f %f",
+	logger.Infof("ReturnContainer fn %s %d %d, container: %f %f/%f",
 		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
-		container.CpuUsagePct, container.MemoryUsageInBytes, container.TotalMemoryInBytes)
+		container.CpuUsagePct, container.MemoryUsageInBytes, container.ReqMemoryInBytes)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

@@ -98,7 +98,7 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 	ctn_ids.RUnlock()
 
 	if res == nil { // if no idle container exists
-		ctn, err := r.createNewCntFromNode(req)
+		ctn, err := r.CreateNewCntFromNode(req)
 		if err != nil {
 			return nil, err
 		}
@@ -121,8 +121,8 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 
 	ctn_ids := rwLockSlice.(*RwLockSlice)
 
-	ctn_ids.RLock()
 	ctns := []*ExtendedContainerInfo{}
+	ctn_ids.RLock()
 	for _, val := range ctn_ids.ctns {
 		cmObj, ok := r.ctn2info.Get(val)
 		if (!ok) {
@@ -135,6 +135,9 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	ctn_ids.RUnlock()
 	sortCtnByMemUsage(ctns)
 	for _, ctn := range ctns {
+		if ctn.isCpuOrMemUsageHigh() {
+			continue
+		}
 		ctn.Lock()
 		if len(ctn.requests) < parallelReqNum {
 			ctn.requests[req.RequestId] = 1
@@ -145,7 +148,8 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		ctn.Unlock()
 	}
 	if res == nil { // if no idle container exists
-		ctn, err := r.createNewCntFromNode(req)
+		logger.Infof("ctns %v can't provide", ctns)
+		ctn, err := r.CreateNewCntFromNode(req)
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +164,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 }
 
 // if no idle container exists
-func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*ExtendedContainerInfo, error) {
+func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest) (*ExtendedContainerInfo, error) {
 	now := time.Now().UnixNano()
 	var res *ExtendedContainerInfo
 
@@ -179,31 +183,30 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 		FunctionMeta: &nsPb.FunctionMeta{
 			FunctionName:  req.FunctionName,
 			Handler:       req.FunctionConfig.Handler,
-			TimeoutInMs:   req.FunctionConfig.TimeoutInMs,
+			TimeoutInMs:   funTimeout,
 			MemoryInBytes: req.FunctionConfig.MemoryInBytes,
 		},
 		RequestId: req.RequestId,
 	})
+	rpcDelay := (time.Now().UnixNano() - now) / 1e6
 	if err != nil {
 		r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
 	// reset node info
-	lastFailedCnt := node.failedCnt
-	if lastFailedCnt > 0 {
-		node.Lock()
-		node.failedCnt = 0
-		node.reqCnt -= 1
-		node.Unlock()
-		logger.Infof("Reset node %s fail cnt from %d to 0", node.address, lastFailedCnt)
-	}
+
+	node.Lock()
+	node.reqCnt -= 1
+	node.Unlock()
+
 	res = &ExtendedContainerInfo{
-		id:       replyC.ContainerId,
-		address:  node.address,
-		port:     node.port,
-		nodeId:   node.nodeID,
-		requests: make(map[string]int64),
-		fn:       req.FunctionName,
+		id:               replyC.ContainerId,
+		address:          node.address,
+		port:             node.port,
+		nodeId:           node.nodeID,
+		requests:         make(map[string]int64),
+		fn:               req.FunctionName,
+		ReqMemoryInBytes: float64(req.FunctionConfig.MemoryInBytes),
 	}
 	res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
 
@@ -214,16 +217,16 @@ func (r *Router) createNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)
-	logger.Infof("createNewCntFromNode for %s to %s,lat %d ",
-		req.FunctionName, node.address, (time.Now().UnixNano()-now)/1e6)
+	logger.Infof("CreateNewCntFromNode for %s to %s,rpc lat %d, lat %d ",
+		req.FunctionName, node.address, rpcDelay, (time.Now().UnixNano()-now)/1e6)
 	return res, nil
 }
 
-func sortCtnByMemUsage(values []*ExtendedContainerInfo) {
-	sort.Slice(values, func(i, j int) bool {
-		if (values[i].MemoryUsageInBytes < values[j].MemoryUsageInBytes) {
+func sortCtnByMemUsage(ctns []*ExtendedContainerInfo) {
+	sort.Slice(ctns, func(i, j int) bool {
+		if (ctns[i].MemoryUsageInBytes < ctns[j].MemoryUsageInBytes) {
 			return true
 		}
-		return values[i].CpuUsagePct < values[j].CpuUsagePct
+		return ctns[i].CpuUsagePct < ctns[j].CpuUsagePct
 	})
 }

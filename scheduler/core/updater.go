@@ -1,9 +1,12 @@
 package core
 
 import (
+	"aliyun/serverless/mini-faas/scheduler/model"
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
+	"github.com/satori/go.uuid"
 	"time"
+	pb "aliyun/serverless/mini-faas/scheduler/proto"
 )
 
 func (node *ExtendedNodeInfo) UpdateStats(nodeID, address string, port, memory int64) {
@@ -57,7 +60,6 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 			continue
 		}
 		container.Lock()
-		container.TotalMemoryInBytes = float64(ctnStat.TotalMemoryInBytes)
 		container.MemoryUsageInBytes = float64(ctnStat.MemoryUsageInBytes)
 		// 悲观估计 todo improve
 		if (ctnStat.CpuUsagePct > 0) {
@@ -72,30 +74,117 @@ func (r *Router) CalQps() {
 	ticker := time.NewTicker(calQpsDuration)
 	defer ticker.Stop()
 	defer close(funChan)
-	globalFn2ctn := make(map[string]int)
-	fn2ctn := make(map[string]int)
+	globalFn2cnt := make(map[string]int)
+	fn2cnt := make(map[string]int)
 
 	for {
 		<-ticker.C
 		cl := len(funChan)
-		logger.Infof("chan len %d", len(funChan))
 		for i := 0; i < cl; i++ {
 			fn := <-funChan
-			if _, ok := globalFn2ctn[fn]; ok {
-				globalFn2ctn[fn] += 1
+			if _, ok := globalFn2cnt[fn]; ok {
+				globalFn2cnt[fn] += 1
 			} else {
-				globalFn2ctn[fn] = 1
+				globalFn2cnt[fn] = 1
 			}
-			if _, ok := fn2ctn[fn]; ok {
-				fn2ctn[fn] += 1
+			if _, ok := fn2cnt[fn]; ok {
+				fn2cnt[fn] += 1
 			} else {
-				fn2ctn[fn] = 1
+				fn2cnt[fn] = 1
 			}
 		}
 		logger.Infof("fn qps local %v, global %v",
-			fn2ctn, globalFn2ctn)
-		for k := range fn2ctn {
-			delete(fn2ctn, k)
+			fn2cnt, globalFn2cnt)
+		r.updateFinfo(fn2cnt)
+		for k := range fn2cnt {
+			delete(fn2cnt, k)
 		}
+	}
+}
+
+// todo reschedule 不均衡的各个节点
+func (r *Router) ReSchedule() {
+}
+
+var cntThreshold = reqQpsThreshold*10 - 5
+
+func (r *Router) updateFinfo(fn2cnt map[string]int) {
+	for fn, cnt := range fn2cnt {
+		if cnt > cntThreshold {
+			finfoObj, ok := r.fn2finfoMap.Get(fn)
+			if !ok {
+				logger.Errorf("no func info for the fn %s when updateFinfo", fn)
+				continue
+			}
+			finfo := finfoObj.(*model.FuncInfo)
+			finfo.DenseCnt += 1
+			if finfo.CallMode != model.Dense && finfo.DenseCnt > 6 {
+				logger.Infof("change fn %s mode from %v to %v",
+					fn, finfo.CallMode, model.Dense)
+				finfo.CallMode = model.Dense
+				r.boostCtnAction(fn)
+			}
+		}
+	}
+}
+
+func (r *Router) boostCtnAction(fn string) {
+	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
+	ctn_ids := rwLockSlice.(*RwLockSlice)
+	usedNodeIds := []string{}
+	ctn_ids.RLock()
+	for _, val := range ctn_ids.ctns {
+		cmObj, ok := r.ctn2info.Get(val)
+		if (!ok) {
+			logger.Errorf("No ctn info found 4 ctn %s when boostCtnAction", val)
+			continue
+		}
+		container := cmObj.(*ExtendedContainerInfo)
+		usedNodeIds = append(usedNodeIds, container.nodeId)
+	}
+	ctn_ids.RUnlock()
+
+	for key := range r.nodeMap.Keys() {
+		noCtn := true
+		for usedNodeIds := range usedNodeIds {
+			if usedNodeIds == key {
+				noCtn = false
+				break
+			}
+		}
+		if noCtn {
+			req := r.constructAcquireCtnReq(fn)
+			if req == nil {
+				continue
+			}
+			logger.Infof("begin add one ctn for fn %s", fn)
+			ctn, err := r.CreateNewCntFromNode(req)
+			if err == nil {
+				ctn.Lock()
+				delete(ctn.requests, req.RequestId)
+				ctn.Unlock()
+			}
+		}
+	}
+}
+
+func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
+	finfoObj, ok := r.fn2finfoMap.Get(fn)
+	if !ok {
+		logger.Errorf("no func info for the fn %s when constructAcquireCtnReq", fn)
+		return nil
+	}
+	finfo := finfoObj.(*model.FuncInfo)
+	funcConfig := &pb.FunctionConfig{
+		Handler:       finfo.Handler,
+		TimeoutInMs:   finfo.TimeoutInMs,
+		MemoryInBytes: finfo.MemoryInBytes,
+	}
+	reqId := uuid.NewV4().String()
+	return &pb.AcquireContainerRequest{
+		AccountId:      staticAcctId,
+		FunctionName:   fn,
+		FunctionConfig: funcConfig,
+		RequestId:      reqId,
 	}
 }
