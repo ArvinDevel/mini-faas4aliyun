@@ -86,6 +86,7 @@ var reqQpsThreshold = 10
 
 var calQpsDuration = time.Duration(time.Second * 10)
 var funChan = make(chan string, 10000)
+var rtnCtnChan = make(chan interface{}, 1000)
 
 var reScheduleDuration = time.Duration(time.Second * 10)
 
@@ -103,7 +104,7 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 }
 
 func (ctn *ExtendedContainerInfo) String() string {
-	return fmt.Sprintf("Ctn [%s,%s,%v],mem:%f/%f, cpu:%f ,req Ctn: %d ",
+	return fmt.Sprintf("Ctn [%s,%s,%v],mem:%f/%f, cpu:%f ,active req: %d ",
 		ctn.address, ctn.id, ctn.usable,
 		ctn.MemoryUsageInBytes, ctn.ReqMemoryInBytes, ctn.CpuUsagePct,
 		len(ctn.requests))

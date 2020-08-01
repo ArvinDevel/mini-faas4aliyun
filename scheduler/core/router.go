@@ -43,6 +43,14 @@ func (r *Router) Start() {
 	//		go r.remoteGetNode(staticAcctId, 0)
 	//	}
 	//}()
+	go func() {
+		for {
+			select {
+			case ctn := <-rtnCtnChan:
+				r.returnContainer(ctn.(*model.ResponseInfo))
+			}
+		}
+	}()
 }
 
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
@@ -89,6 +97,8 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		node.Unlock()
 	}
 	logger.Infof("current nodes %s can't affoard %d", values, memoryReq)
+	// only used for local
+	//r.remoteGetNode(accountId)
 	return r.fallbackUseLocalNode(values)
 }
 
@@ -154,8 +164,12 @@ func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
 	node.Unlock()
 }
 
+func (r *Router) ReturnContainer(res *model.ResponseInfo) {
+	rtnCtnChan <- res
+}
+
 // todo use stat info from node to predict func type[first priority]
-func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) error {
+func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	rmObj, ok := r.requestMap.Get(res.ID)
 	if !ok {
 		return errors.Errorf("no request found with id %s", res.ID)
@@ -189,12 +203,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 		finfo.MinDurationInMs = curentDuration
 	}
 
-	if finfo.AvgDurationInMs > 0 {
-		// not accurate
-		finfo.AvgDurationInMs = (finfo.AvgDurationInMs + curentDuration) / 2
-	} else {
-		finfo.AvgDurationInMs = curentDuration
-	}
+	finfo.SumDurationInMs += curentDuration
+	finfo.Cnt += 1
 
 	ctnInfo, ok := r.ctn2info.Get(res.ContainerId)
 	if !ok {
@@ -204,8 +214,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer fn %s %d %d, %v",
-		fn, finfo.MaxMemoryUsageInBytes, finfo.MaxDurationInMs, container)
+	logger.Infof("ReturnContainer %s %v, %v",
+		fn, finfo, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

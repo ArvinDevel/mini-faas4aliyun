@@ -58,7 +58,7 @@ func (s *Server) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 func (s *Server) ReturnContainer(ctx context.Context, req *pb.ReturnContainerRequest) (*pb.ReturnContainerReply, error) {
-	go s.router.ReturnContainer(ctx, &model.ResponseInfo{
+	go s.router.ReturnContainer(&model.ResponseInfo{
 		ID:                    req.RequestId,
 		ContainerId:           req.ContainerId,
 		DurationInMs:          req.DurationInNanos / 1e6,

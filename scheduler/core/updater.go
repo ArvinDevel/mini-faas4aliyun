@@ -276,13 +276,17 @@ func (r *Router) checkFn(fn string) {
 		return
 	}
 	finfo := finfoObj.(*model.FuncInfo)
-	ratio := float64(finfo.AvgDurationInMs) / float64(finfo.MinDurationInMs)
+	logger.Infof("checkFn %s %v ", fn, finfo)
+	if finfo.Cnt == 0 {
+		return
+	}
+	ratio := float64(finfo.SumDurationInMs/finfo.Cnt) / float64(finfo.MinDurationInMs)
 	if ratio > 1.2 && !finfo.TimeOverThreshold {
-		logger.Warningf("fn %s time over 20%, change state 2 over", fn)
+		logger.Warningf("fn %v time over 20%, change state 2 over", fn)
 		finfo.TimeOverThreshold = true
 	}
 	if ratio <= 1.2 && finfo.TimeOverThreshold {
-		logger.Warningf("fn %s time over recover , change state ", fn)
+		logger.Warningf("fn %v time over recover , change state ", fn)
 		finfo.TimeOverThreshold = false
 	}
 }

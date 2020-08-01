@@ -1,5 +1,7 @@
 package model
 
+import "fmt"
+
 type FuncCallMode int
 
 //pre do action(swarm up or release quickly) according to stats or predict
@@ -32,16 +34,23 @@ type FuncInfo struct {
 	MemoryInBytes int64
 
 	// dynamic info(runtime stats)
-	//  use max stats todo avg?
 	MinDurationInMs       int64
-	AvgDurationInMs       int64
 	MaxDurationInMs       int64 `protobuf:"varint,3,opt,name=duration_in_nanos,json=durationInNanos,proto3" json:"duration_in_nanos,omitempty"`
+	SumDurationInMs       int64
+	Cnt                   int64
 	MaxMemoryUsageInBytes int64 `protobuf:"varint,4,opt,name=max_memory_usage_in_bytes,json=maxMemoryUsageInBytes,proto3" json:"max_memory_usage_in_bytes,omitempty"`
 
 	ActualUsedMemInBytes int64
 
-	CallMode FuncCallMode
-	DenseCnt int
-	Handler  string
+	CallMode          FuncCallMode
+	DenseCnt          int
+	Handler           string
 	TimeOverThreshold bool
+}
+
+func (finfo *FuncInfo) String() string {
+	return fmt.Sprintf("Fn cnt: %d, duration:%d,%d, mem:%d/%d",
+		finfo.Cnt,
+		finfo.MinDurationInMs, finfo.MaxDurationInMs,
+		finfo.MaxMemoryUsageInBytes, finfo.MemoryInBytes)
 }
