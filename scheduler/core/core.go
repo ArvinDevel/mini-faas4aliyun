@@ -135,9 +135,9 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	ctn_ids.RUnlock()
 	sortCtnByMemUsage(ctns)
 	for _, ctn := range ctns {
-		if ctn.isCpuOrMemUsageHigh() {
-			continue
-		}
+		//if ctn.isCpuOrMemUsageHigh() {
+		//	continue
+		//}
 		ctn.Lock()
 		if len(ctn.requests) < parallelReqNum {
 			ctn.requests[req.RequestId] = 1
@@ -148,10 +148,14 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		ctn.Unlock()
 	}
 	if res == nil { // if no idle container exists
-		logger.Infof("ctns %v can't provide", ctns)
+		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
 		ctn, err := r.CreateNewCntFromNode(req)
 		if err != nil {
-			return nil, err
+			if len(ctns) > 0 {
+				res = fallbackChooseCtn(ctns)
+			} else {
+				return nil, err
+			}
 		}
 		res = ctn
 	}
@@ -161,6 +165,12 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		NodeServicePort: res.port,
 		ContainerId:     res.id,
 	}, nil
+}
+
+func fallbackChooseCtn(ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
+	size := len(ctns)
+	idx := random.Intn(size)
+	return ctns[idx]
 }
 
 // if no idle container exists
@@ -191,6 +201,7 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 	rpcDelay := (time.Now().UnixNano() - now) / 1e6
 	if err != nil {
 		r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
+		logger.Errorf("failed to create container on %s", node.address, err)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
 	// reset node info

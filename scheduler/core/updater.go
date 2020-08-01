@@ -49,6 +49,10 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	node.MemoryUsageInBytes = float64(nodeStat.MemoryUsageInBytes)
 	node.ctnCnt = len(ctnStatList)
 
+	if node.isCpuOrMemUsageHigh() {
+		logger.Warningf("node %v warn", node)
+	}
+
 	for _, ctnStat := range ctnStatList {
 		ctnInfo, ok := r.ctn2info.Get(ctnStat.ContainerId)
 		if !ok {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/orcaman/concurrent-map"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -82,6 +83,8 @@ var calQpsDuration = time.Duration(time.Second * 10)
 var funChan = make(chan string, 10000)
 
 var reScheduleDuration = time.Duration(time.Second * 10)
+
+var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // util/helper
 func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {

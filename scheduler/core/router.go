@@ -3,7 +3,6 @@ package core
 import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
-	"math/rand"
 	"sort"
 	"time"
 
@@ -66,7 +65,6 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 }
 
 var values = []*ExtendedNodeInfo{}
-var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	length := len(values)
