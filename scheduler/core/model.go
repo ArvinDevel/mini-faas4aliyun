@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"github.com/orcaman/concurrent-map"
 	"math/rand"
 	"sync"
@@ -33,6 +34,7 @@ type ExtendedContainerInfo struct {
 	CpuUsagePct        float64
 
 	fn string
+	outlierCnt int
 }
 
 type RwLockSlice struct {
@@ -95,4 +97,11 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 		return true
 	}
 	return false
+}
+
+func (ctn *ExtendedContainerInfo) String() string {
+	return fmt.Sprintf("Ctn [%s,%s],mem:%f/%f, cpu:%f ,req Ctn: %d ",
+		ctn.address, ctn.id,
+		ctn.MemoryUsageInBytes, ctn.ReqMemoryInBytes, ctn.CpuUsagePct,
+		len(ctn.requests))
 }

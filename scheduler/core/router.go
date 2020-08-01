@@ -198,9 +198,8 @@ func (r *Router) ReturnContainer(ctx context.Context, res *model.ResponseInfo) e
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer fn %s %d %d, container: %f %f/%f",
-		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs,
-		container.CpuUsagePct, container.MemoryUsageInBytes, container.ReqMemoryInBytes)
+	logger.Infof("ReturnContainer fn %s %d %d, ctn: %v",
+		fn, finfo.MaxMemoryUsageInBytes, finfo.DurationInMs, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

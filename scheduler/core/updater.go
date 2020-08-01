@@ -115,6 +115,7 @@ var cntThreshold = reqQpsThreshold*10 - 5
 func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
 		if cnt > cntThreshold {
+			r.outputOutlierCtn(fn)
 			finfoObj, ok := r.fn2finfoMap.Get(fn)
 			if !ok {
 				logger.Errorf("no func info for the fn %s when updateFinfo", fn)
@@ -190,5 +191,47 @@ func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
 		FunctionName:   fn,
 		FunctionConfig: funcConfig,
 		RequestId:      reqId,
+	}
+}
+
+func (r *Router) outputOutlierCtn(fn string) {
+	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
+	ctn_ids := rwLockSlice.(*RwLockSlice)
+	ctns := []*ExtendedContainerInfo{}
+	ctn_ids.RLock()
+	for _, val := range ctn_ids.ctns {
+		cmObj, ok := r.ctn2info.Get(val)
+		if (!ok) {
+			logger.Errorf("No ctn info found 4 ctn %s when boostCtnAction", val)
+			continue
+		}
+		container := cmObj.(*ExtendedContainerInfo)
+		ctns = append(ctns, container)
+	}
+	ctn_ids.RUnlock()
+	total_cpu := 0.0
+	total_mem := 0.0
+	for _, ctn := range ctns {
+		total_cpu += ctn.CpuUsagePct
+		total_mem += ctn.MemoryUsageInBytes
+	}
+	size := float64(len(ctns))
+	avgCpu := total_cpu / size
+	avgCpuThreshold := avgCpu * 1.2
+	avgMem := total_mem / size
+	avgMemThreshold := avgMem * 1.2
+	for _, ctn := range ctns {
+		if ctn.CpuUsagePct > avgCpuThreshold {
+			ctn.outlierCnt += 1
+			if ctn.outlierCnt < 1000 {
+				logger.Infof("ctn %v cpu over threshold %f", ctn, avgCpuThreshold)
+			}
+		}
+		if ctn.MemoryUsageInBytes > avgMemThreshold {
+			ctn.outlierCnt += 1
+			if ctn.outlierCnt < 1000 {
+				logger.Infof("ctn %v mem over threshold %f", ctn, avgMemThreshold)
+			}
+		}
 	}
 }
