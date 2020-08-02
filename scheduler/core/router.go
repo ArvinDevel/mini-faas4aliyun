@@ -52,12 +52,14 @@ func (r *Router) Start() {
 }
 
 func (r *Router) warmup(num int) {
+	// to avoid bootstrap swarm up and medium swarm both aquire when acctId change
+	acctId := staticAcctId
 	for i := 0; i < num; i++ {
 		go func() {
-			_, err := r.remoteGetNode(staticAcctId)
+			_, err := r.remoteGetNode(acctId)
 			if err != nil {
 				time.Sleep(30 * time.Second)
-				_, err2 := r.remoteGetNode(staticAcctId)
+				_, err2 := r.remoteGetNode(acctId)
 				if err2 != nil {
 					panic("after sleep 30s still can't acquire node")
 				}
@@ -65,6 +67,9 @@ func (r *Router) warmup(num int) {
 		}()
 	}
 }
+
+//todo use state machine to simulate fn to avoid aquire multiple ctns,
+// and motivate expand and shink, pass finfo to core maybe
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
@@ -230,8 +235,8 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer %s %d, %v, %v",
-		fn, curentDuration, finfo, container)
+	logger.Infof("ReturnContainer %d, %v, %v",
+		curentDuration, finfo, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

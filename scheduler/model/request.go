@@ -12,6 +12,18 @@ const (
 	Dense       // 密集型
 )
 
+type FnState int
+
+//Inited state don't need remeto get ctn, just spin-waiting,
+// Exited state resources should be clear
+const (
+	Initing FnState = iota
+	Inited
+	Expanding
+	Shinking
+	Exited
+)
+
 type RequestInfo struct {
 	ID               string
 	FunctionName     string
@@ -46,6 +58,8 @@ type FuncInfo struct {
 	DenseCnt          int
 	Handler           string
 	TimeOverThreshold bool
+
+	State FnState
 }
 
 func (finfo *FuncInfo) String() string {

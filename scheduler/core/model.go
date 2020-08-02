@@ -35,7 +35,8 @@ type ExtendedContainerInfo struct {
 
 	fn         string
 	outlierCnt int
-	usable     bool `whether is usable used for indicate deleting`
+	usable     bool    `whether is usable used for indicate deleting`
+	priority   float64 `(0-1]more less more high priority`
 }
 
 type RwLockSlice struct {
@@ -53,18 +54,12 @@ type Router struct {
 	rmClient    rmPb.ResourceManagerClient
 }
 
-type AcctId struct {
-	sync.Mutex
-	acctId string
-}
-
 const funTimeout = 60000
 
 var slack int64 = 5 * 1000 * 1000
 
 var mockStr = "mock-reqId/acctId"
 
-var acctId = AcctId{}
 var staticAcctId = "1001210857578086"
 
 var getStatsReq = &nspb.GetStatsRequest{
@@ -83,7 +78,8 @@ var nodeCpuHighThreshold = 150.0
 var nodeMemHighThreshold = 0.75
 var nodeFailedCntThreshold = 10
 var reqQpsThreshold = 9
-var reqOverThresholdNum = 10
+// todo 自适应调整阈值，防止为少量的突增的申请单独的node；
+var reqOverThresholdNum = 20
 
 var outlierThreshold = 1000
 
@@ -107,8 +103,8 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 }
 
 func (ctn *ExtendedContainerInfo) String() string {
-	return fmt.Sprintf("Ctn [%s,%s,%v],mem:%f/%f, cpu:%f ,active req: %d ",
-		ctn.address, ctn.id, ctn.usable,
+	return fmt.Sprintf("Ctn for %s, [%s,%s,%v],mem:%f/%f, cpu:%f ,active req: %d ",
+		ctn.fn, ctn.address, ctn.id, ctn.usable,
 		ctn.MemoryUsageInBytes, ctn.ReqMemoryInBytes, ctn.CpuUsagePct,
 		len(ctn.requests))
 }
