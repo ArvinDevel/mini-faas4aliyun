@@ -62,7 +62,6 @@ func (r *Router) warmup(num int) {
 	}
 }
 func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	now := time.Now().UnixNano()
 	// Save the name for later ReturnContainer
 	fn := req.FunctionName
 	funChan <- fn
@@ -76,10 +75,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		TimeOverThreshold: false,
 	})
 	funcExeMode := r.getFuncExeMode(req)
-	result, err := r.pickCntAccording2ExeMode(funcExeMode, req)
-	logger.Infof("AcquireContainer fn %s, mem %d ,mode %v, lat %d",
-		fn, req.FunctionConfig.MemoryInBytes, funcExeMode, (time.Now().UnixNano()-now)/1e6)
-	return result, err
+	return r.pickCntAccording2ExeMode(funcExeMode, req)
 }
 
 var values = []*ExtendedNodeInfo{}
@@ -230,8 +226,8 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer %s %v, %v",
-		fn, finfo, container)
+	logger.Infof("ReturnContainer %s %d, %v, %v",
+		fn, curentDuration, finfo, container)
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release

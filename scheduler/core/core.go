@@ -236,6 +236,9 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest) (*Extende
 
 func sortCtnByMemUsage(ctns []*ExtendedContainerInfo) {
 	sort.Slice(ctns, func(i, j int) bool {
+		if len(ctns[i].requests) < len(ctns[j].requests) {
+			return true
+		}
 		if (ctns[i].MemoryUsageInBytes < ctns[j].MemoryUsageInBytes) {
 			return true
 		}

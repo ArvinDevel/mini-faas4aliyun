@@ -59,13 +59,8 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		if (ctnStat.TotalMemoryInBytes == 0 || ctnStat.MemoryUsageInBytes == 0) {
 			continue
 		}
-		container.Lock()
 		container.MemoryUsageInBytes = float64(ctnStat.MemoryUsageInBytes)
-		// 悲观估计 todo improve
-		if (ctnStat.CpuUsagePct > 0) {
-			container.CpuUsagePct = (container.CpuUsagePct + ctnStat.CpuUsagePct) / 2
-		}
-		container.Unlock()
+		container.CpuUsagePct = ctnStat.CpuUsagePct
 	}
 }
 
@@ -74,7 +69,6 @@ func (r *Router) CalQps() {
 	ticker := time.NewTicker(calQpsDuration)
 	defer ticker.Stop()
 	defer close(funChan)
-	globalFn2cnt := make(map[string]int)
 	fn2cnt := make(map[string]int)
 
 	for {
@@ -82,19 +76,13 @@ func (r *Router) CalQps() {
 		cl := len(funChan)
 		for i := 0; i < cl; i++ {
 			fn := <-funChan
-			if _, ok := globalFn2cnt[fn]; ok {
-				globalFn2cnt[fn] += 1
-			} else {
-				globalFn2cnt[fn] = 1
-			}
 			if _, ok := fn2cnt[fn]; ok {
 				fn2cnt[fn] += 1
 			} else {
 				fn2cnt[fn] = 1
 			}
 		}
-		logger.Infof("fn qps local %v, global %v",
-			fn2cnt, globalFn2cnt)
+		logger.Infof("fn qps %v", fn2cnt)
 		r.updateFinfo(fn2cnt)
 		for k := range fn2cnt {
 			delete(fn2cnt, k)
@@ -106,12 +94,10 @@ func (r *Router) CalQps() {
 func (r *Router) ReSchedule() {
 }
 
-var cntThreshold = reqQpsThreshold*10 - 5
-
 func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
 		r.checkFn(fn)
-		if cnt > cntThreshold {
+		if cnt > reqQpsThreshold {
 			r.outputOutlierCtn(fn)
 			finfoObj, ok := r.fn2finfoMap.Get(fn)
 			if !ok {
@@ -120,7 +106,7 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 			}
 			finfo := finfoObj.(*model.FuncInfo)
 			finfo.DenseCnt += 1
-			if finfo.CallMode != model.Dense && finfo.DenseCnt > 6 {
+			if finfo.CallMode != model.Dense && finfo.DenseCnt > 10 {
 				logger.Infof("change fn %s mode from %v to %v",
 					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
@@ -149,7 +135,7 @@ func (r *Router) addNewNodeAndCtnsAction(fn string) {
 	}
 	finfo := finfoObj.(*model.FuncInfo)
 
-	ctnSize := node.availableMemInBytes / finfo.MaxMemoryUsageInBytes
+	ctnSize := node.availableMemInBytes / finfo.MemoryInBytes
 
 	for i := int64(0); i < ctnSize; i++ {
 		req := r.constructAcquireCtnReq(fn)
@@ -260,7 +246,7 @@ func (r *Router) outputOutlierCtn(fn string) {
 				logger.Infof("ctn %v for %s cpu over threshold %f", ctn, fn, avgCpuThreshold)
 			}
 		}
-		if ctn.MemoryUsageInBytes > avgMemThreshold {
+		if ctn.MemoryUsageInBytes > avgMemThreshold && ctn.isCpuOrMemUsageHigh() {
 			ctn.outlierCnt += 1
 			if ctn.outlierCnt < 1000 {
 				logger.Infof("ctn %v for %s mem over threshold %f", ctn, fn, avgMemThreshold)
@@ -276,7 +262,6 @@ func (r *Router) checkFn(fn string) {
 		return
 	}
 	finfo := finfoObj.(*model.FuncInfo)
-	logger.Infof("checkFn %s %v ", fn, finfo)
 	if finfo.Cnt == 0 {
 		return
 	}
@@ -284,6 +269,7 @@ func (r *Router) checkFn(fn string) {
 	if ratio > 1.2 && !finfo.TimeOverThreshold {
 		logger.Warningf("fn %v time over 20%, change state 2 over", fn)
 		finfo.TimeOverThreshold = true
+		// todo if fn is peroricall, then reschedule it
 	}
 	if ratio <= 1.2 && finfo.TimeOverThreshold {
 		logger.Warningf("fn %v time over recover , change state ", fn)
