@@ -55,9 +55,12 @@ func (r *Router) warmup(num int) {
 	for i := 0; i < num; i++ {
 		go func() {
 			_, err := r.remoteGetNode(staticAcctId)
-			time.Sleep(30 * time.Second)
 			if err != nil {
-				r.remoteGetNode(staticAcctId)
+				time.Sleep(30 * time.Second)
+				_, err2 := r.remoteGetNode(staticAcctId)
+				if err2 != nil {
+					panic("after sleep 30s still can't acquire node")
+				}
 			}
 		}()
 	}
@@ -107,7 +110,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		logger.Errorf("acctId changed from %s to %s", staticAcctId, accountId)
 		staticAcctId = accountId
 		r.remoteGetNode(accountId)
-		r.warmup(9)
+		r.warmup(8)
 	}
 	if len(values) > 0 {
 		return r.fallbackUseLocalNode()
