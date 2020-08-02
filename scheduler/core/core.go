@@ -156,8 +156,9 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 			} else {
 				return nil, err
 			}
+		} else {
+			res = ctn
 		}
-		res = ctn
 	}
 	return &pb.AcquireContainerReply{
 		NodeId:          res.nodeId,

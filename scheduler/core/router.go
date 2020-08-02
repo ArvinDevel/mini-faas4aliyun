@@ -55,6 +55,7 @@ func (r *Router) warmup(num int) {
 	for i := 0; i < num; i++ {
 		go func() {
 			_, err := r.remoteGetNode(staticAcctId)
+			time.Sleep(30 * time.Second)
 			if err != nil {
 				r.remoteGetNode(staticAcctId)
 			}
