@@ -49,8 +49,8 @@ type FuncInfo struct {
 }
 
 func (finfo *FuncInfo) String() string {
-	return fmt.Sprintf("Fn cnt: %d, duration:%d,%d, mem:%d/%d",
+	return fmt.Sprintf("Fn cnt: %d, duration:%d,%d,%d, mem:%d/%d",
 		finfo.Cnt,
-		finfo.MinDurationInMs, finfo.MaxDurationInMs,
+		finfo.MinDurationInMs, finfo.MaxDurationInMs, finfo.SumDurationInMs,
 		finfo.MaxMemoryUsageInBytes, finfo.MemoryInBytes)
 }

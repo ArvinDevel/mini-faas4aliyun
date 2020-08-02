@@ -6,6 +6,7 @@ import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"github.com/satori/go.uuid"
+	"sort"
 	"time"
 )
 
@@ -49,6 +50,7 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		logger.Warningf("node %v warn", node)
 	}
 
+	ctns := []*ExtendedContainerInfo{}
 	for _, ctnStat := range ctnStatList {
 		ctnInfo, ok := r.ctn2info.Get(ctnStat.ContainerId)
 		if !ok {
@@ -56,11 +58,27 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 			continue
 		}
 		container := ctnInfo.(*ExtendedContainerInfo)
-		if (ctnStat.TotalMemoryInBytes == 0 || ctnStat.MemoryUsageInBytes == 0) {
-			continue
-		}
 		container.MemoryUsageInBytes = float64(ctnStat.MemoryUsageInBytes)
 		container.CpuUsagePct = ctnStat.CpuUsagePct
+		ctns = append(ctns, container)
+	}
+	//sort.Slice(ctns, func(i, j int) bool {
+	//	return ctns[i].MemoryUsageInBytes > ctns[j].MemoryUsageInBytes
+	//})
+	//if len(ctns) > 1 {
+	//	if ctns[0].MemoryUsageInBytes/ctns[1].MemoryUsageInBytes > 1.5 {
+	//		logger.Warningf("%v use more mem on %s", ctns[0], node)
+	//	}
+	//}
+
+	sort.Slice(ctns, func(i, j int) bool {
+		return ctns[i].CpuUsagePct > ctns[j].CpuUsagePct
+	})
+	if len(ctns) > 1 {
+		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 1.5 && ctns[0].outlierCnt < outlierThreshold {
+			logger.Warningf("%v use more cpu on %s", ctns[0], node)
+			// todo reschedule this
+		}
 	}
 }
 
@@ -98,7 +116,6 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
 		r.checkFn(fn)
 		if cnt > reqQpsThreshold {
-			r.outputOutlierCtn(fn)
 			finfoObj, ok := r.fn2finfoMap.Get(fn)
 			if !ok {
 				logger.Errorf("no func info for the fn %s when updateFinfo", fn)
@@ -106,11 +123,11 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 			}
 			finfo := finfoObj.(*model.FuncInfo)
 			finfo.DenseCnt += 1
-			if finfo.CallMode != model.Dense && finfo.DenseCnt > 10 {
+			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
 				logger.Infof("change fn %s mode from %v to %v",
 					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
-				r.boostCtnAction(fn)
+				go r.boostCtnAction(fn)
 				go r.addNewNodeAndCtnsAction(fn)
 			}
 		}
@@ -210,48 +227,6 @@ func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
 		FunctionName:   fn,
 		FunctionConfig: funcConfig,
 		RequestId:      reqId,
-	}
-}
-
-func (r *Router) outputOutlierCtn(fn string) {
-	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
-	ctn_ids := rwLockSlice.(*RwLockSlice)
-	ctns := []*ExtendedContainerInfo{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s when boostCtnAction", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
-		ctns = append(ctns, container)
-	}
-	ctn_ids.RUnlock()
-	total_cpu := 0.0
-	total_mem := 0.0
-	for _, ctn := range ctns {
-		total_cpu += ctn.CpuUsagePct
-		total_mem += ctn.MemoryUsageInBytes
-	}
-	size := float64(len(ctns))
-	avgCpu := total_cpu / size
-	avgCpuThreshold := avgCpu * 1.2
-	avgMem := total_mem / size
-	avgMemThreshold := avgMem * 1.2
-	for _, ctn := range ctns {
-		if ctn.CpuUsagePct > avgCpuThreshold {
-			ctn.outlierCnt += 1
-			if ctn.outlierCnt < 1000 {
-				logger.Infof("ctn %v for %s cpu over threshold %f", ctn, fn, avgCpuThreshold)
-			}
-		}
-		if ctn.MemoryUsageInBytes > avgMemThreshold && ctn.isCpuOrMemUsageHigh() {
-			ctn.outlierCnt += 1
-			if ctn.outlierCnt < 1000 {
-				logger.Infof("ctn %v for %s mem over threshold %f", ctn, fn, avgMemThreshold)
-			}
-		}
 	}
 }
 

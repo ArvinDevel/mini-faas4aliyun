@@ -82,7 +82,10 @@ var parallelReqNum = 20
 var nodeCpuHighThreshold = 150.0
 var nodeMemHighThreshold = 0.75
 var nodeFailedCntThreshold = 10
-var reqQpsThreshold = 18
+var reqQpsThreshold = 9
+var reqOverThresholdNum = 10
+
+var outlierThreshold = 1000
 
 var calQpsDuration = time.Duration(time.Second)
 var funChan = make(chan string, 10000)
