@@ -35,12 +35,12 @@ func (r *Router) Start() {
 	r.warmup(9)
 	go r.UpdateStats()
 	go r.CalQps()
-	//go func() {
-	//	for i := 0; i < 10; i++ {
-	//		time.Sleep(time.Duration(30 * time.Second))
-	//		go r.remoteGetNode(staticAcctId, 0)
-	//	}
-	//}()
+	go func() {
+		for i := 0; i < 4; i++ {
+			time.Sleep(time.Duration(30 * time.Second))
+			go r.remoteGetNode(staticAcctId)
+		}
+	}()
 	go func() {
 		for {
 			select {
