@@ -1,6 +1,8 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type FuncCallMode int
 
@@ -10,7 +12,7 @@ const (
 	Periodical  // 周期型
 	Sparse      // 稀疏型
 	Gray
-	Dense       // 密集型
+	Dense  // 密集型
 )
 
 type FnState int
@@ -68,4 +70,18 @@ func (finfo *FuncInfo) String() string {
 		finfo.Cnt,
 		finfo.MinDurationInMs, finfo.MaxDurationInMs, finfo.SumDurationInMs,
 		finfo.MaxMemoryUsageInBytes, finfo.MemoryInBytes)
+}
+
+func (finfo *FuncInfo) OverThreshold() bool {
+	if finfo.Cnt == 0 {
+		return false
+	}
+	if finfo.TimeOverThreshold {
+		return true
+	}
+	ratio := float64(finfo.SumDurationInMs/finfo.Cnt) / float64(finfo.MinDurationInMs)
+	if ratio > 1.2 {
+		return true
+	}
+	return false
 }

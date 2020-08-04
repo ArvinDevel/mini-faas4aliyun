@@ -23,6 +23,9 @@ func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
 		if memUsage > ctnMemHighThreshold {
 			return MemIntensive
 		}
+		if finfo.OverThreshold() {
+			return CpuIntensive
+		}
 	}
 	return ResourceLess
 }
@@ -46,7 +49,7 @@ func (r *Router) pickCnt4ResourceLess(req *pb.AcquireContainerRequest) (*pb.Acqu
 
 func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	// cpu intensive: reduce mem usage, guarantee cpu by use serial strategy
-	r.reduceReqMem(req)
+	//r.reduceReqMem(req)
 	return r.pickCnt4SerialReq(req);
 }
 
