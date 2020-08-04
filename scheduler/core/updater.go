@@ -60,6 +60,9 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		container := ctnInfo.(*ExtendedContainerInfo)
 		container.MemoryUsageInBytes = float64(ctnStat.MemoryUsageInBytes)
 		container.CpuUsagePct = ctnStat.CpuUsagePct
+		if container.CpuUsagePct > container.ReqMemoryInBytes/node.TotalMemoryInBytes*200 {
+			logger.Warningf(" %v over cpu limit on %v", container, node)
+		}
 		ctns = append(ctns, container)
 	}
 	//sort.Slice(ctns, func(i, j int) bool {
@@ -124,9 +127,12 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 			finfo := finfoObj.(*model.FuncInfo)
 			finfo.DenseCnt += 1
 			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
-				logger.Infof("change fn %s mode from %v to %v",
-					fn, finfo.CallMode, model.Dense)
-				finfo.CallMode = model.Dense
+				logger.Infof("change fn %s mode", fn)
+				if finfo.CallMode != model.Gray {
+					finfo.CallMode = model.Gray
+				} else {
+					finfo.CallMode = model.Dense
+				}
 				go r.boostCtnAction(fn)
 				go r.addNewNodeAndCtnsAction(fn)
 			}

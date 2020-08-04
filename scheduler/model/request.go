@@ -9,6 +9,7 @@ const (
 	Unkown     FuncCallMode = iota
 	Periodical  // 周期型
 	Sparse      // 稀疏型
+	Gray
 	Dense       // 密集型
 )
 

@@ -61,9 +61,6 @@ func (node *ExtendedNodeInfo) String() string {
 }
 
 func (node *ExtendedNodeInfo) isCpuOrMemUsageHigh() bool {
-	if node.MemoryUsageInBytes/node.TotalMemoryInBytes > nodeMemHighThreshold {
-		return true
-	}
 	if node.CpuUsagePct > nodeCpuHighThreshold {
 		return true
 	}
