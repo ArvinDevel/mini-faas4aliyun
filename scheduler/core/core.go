@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// todo default use serial req mode, and fallback(to mem intensive wait ctn ready)
 func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
 	// todo use basic ratio FIRST PRIORITY ！use stats
 	fn := req.FunctionName
