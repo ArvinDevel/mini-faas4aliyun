@@ -232,9 +232,9 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 		return errors.Errorf("no container found with id %s", res.ContainerId)
 	}
 	container := ctnInfo.(*ExtendedContainerInfo)
-	container.Lock()
+	container.SumDurationInMs += float64(curentDuration)
+	container.Cnt += 1
 	delete(container.requests, res.ID)
-	container.Unlock()
 	logger.Infof("ReturnContainer %d, %v, %v",
 		curentDuration, finfo, container)
 	r.requestMap.Remove(res.ID)
