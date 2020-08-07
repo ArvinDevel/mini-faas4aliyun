@@ -97,15 +97,16 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 		go r.CreateNewCntFromNode(req, 1.0)
 		funcExeMode := r.getFuncExeMode(req)
 		for {
-			if funcExeMode == MemIntensive {
-				res = r.fallbackChooseCtn4MemIntensive(req.RequestId, rwLockSlice.ctns)
-				if res != nil {
-					break
-				}
-			} else {
-				if len(rwLockSlice.ctns) > 0 {
+			if len(rwLockSlice.ctns) > 0 {
+				if funcExeMode == MemIntensive {
+					res = r.fallbackChooseCtn4MemIntensive(req.RequestId, rwLockSlice.ctns)
+					if res != nil {
+						break
+					}
+				} else {
 					res = fallbackChooseCtn(rwLockSlice.ctns)
 					break
+
 				}
 			}
 		}
@@ -178,11 +179,9 @@ func fallbackChooseCtn(ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
 func (r *Router) fallbackChooseCtn4MemIntensive(req string, ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
 	var res *ExtendedContainerInfo
 
-	for _, val := range ctns {
-		container := val
+	for _, container := range ctns {
 		container.Lock()
 		if container.usable && len(container.requests) < 1 {
-			container.requests[req] = 1
 			res = container
 			container.Unlock()
 			break
