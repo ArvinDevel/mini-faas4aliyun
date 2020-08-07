@@ -54,9 +54,12 @@ func (r *Router) Start() {
 func (r *Router) warmup(num int) {
 	// to avoid bootstrap swarm up and medium swarm both aquire when acctId change
 	acctId := staticAcctId
+	// golang的for循环会使用同一个变量来存储迭代过程中的临时变量，
+	// goroutine使用该变量的地址，goroutine调度与变量赋值正交，可能导致多个goroutine访问的是同一个数据
 	for i := 1; i <= num; i++ {
+		tmp := i
 		go func() {
-			x := 30 * i
+			x := 30 * tmp
 			time.Sleep(time.Duration(x) * time.Second)
 			_, err := r.remoteGetNode(acctId)
 			if err != nil {
