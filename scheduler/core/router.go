@@ -54,8 +54,10 @@ func (r *Router) Start() {
 func (r *Router) warmup(num int) {
 	// to avoid bootstrap swarm up and medium swarm both aquire when acctId change
 	acctId := staticAcctId
-	for i := 0; i < num; i++ {
+	for i := 1; i <= num; i++ {
 		go func() {
+			x := 30 * i
+			time.Sleep(time.Duration(x) * time.Second)
 			_, err := r.remoteGetNode(acctId)
 			if err != nil {
 				time.Sleep(30 * time.Second)

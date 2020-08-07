@@ -250,12 +250,6 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 
 func sortCtnByMemUsage(ctns []*ExtendedContainerInfo) {
 	sort.Slice(ctns, func(i, j int) bool {
-		if (ctns[i].Cnt != 0 && ctns[j].Cnt != 0) {
-			// todo use weight
-			if ctns[i].SumDurationInMs/ctns[i].Cnt < ctns[j].SumDurationInMs/ctns[j].Cnt {
-				return true
-			}
-		}
 		if ctns[i].priority*float64(len(ctns[i].requests)) < ctns[j].priority*float64(len(ctns[j].requests)) {
 			return true
 		}
