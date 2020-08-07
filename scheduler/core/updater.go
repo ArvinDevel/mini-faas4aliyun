@@ -160,12 +160,7 @@ func (r *Router) addNewNodeAndCtnsAction(fn string) {
 			logger.Errorf("constructAcquireCtnReq when addNewNodeAndCtnsAction for %s", fn)
 			continue
 		}
-		ctn, err := r.CreateNewCntFromNode(req, 0.7)
-		if err == nil {
-			ctn.Lock()
-			delete(ctn.requests, req.RequestId)
-			ctn.Unlock()
-		}
+		r.CreateNewCntFromNode(req, 0.7)
 	}
 }
 
@@ -192,12 +187,7 @@ func (r *Router) boostCtnAction(fn string) {
 				continue
 			}
 			logger.Infof("begin add one ctn for fn %s", fn)
-			ctn, err := r.CreateNewCntFromNode(req, 1.0)
-			if err == nil {
-				ctn.Lock()
-				delete(ctn.requests, req.RequestId)
-				ctn.Unlock()
-			}
+			r.CreateNewCntFromNode(req, 1.0)
 		}
 	}
 }

@@ -111,6 +111,9 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 		}
 	}
 
+	res.Lock()
+	res.requests[req.RequestId] = 1
+	res.Unlock()
 	return &pb.AcquireContainerReply{
 		NodeId:          res.nodeId,
 		NodeAddress:     res.address,
@@ -155,6 +158,9 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 			}
 		}
 	}
+	res.Lock()
+	res.requests[req.RequestId] = 1
+	res.Unlock()
 	return &pb.AcquireContainerReply{
 		NodeId:          res.nodeId,
 		NodeAddress:     res.address,
@@ -234,7 +240,7 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 		usable:           true,
 		priority:         priority,
 	}
-	res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
+	//res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
 
 	ctns, _ := r.fn2ctnSlice.Get(req.FunctionName)
 	ctn_ids := ctns.(*RwLockSlice)
