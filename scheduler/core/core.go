@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// todo default use serial req mode, and fallback(to mem intensive wait ctn ready)
+// todo default use serial req mode
 func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
 	// todo use basic ratio FIRST PRIORITY ！use stats
 	fn := req.FunctionName
@@ -77,17 +77,11 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 	// if not ok, panic
 	rwSlice, _ := r.fn2ctnSlice.Get(fn)
 
-	ctn_ids := rwSlice.(*RwLockSlice)
+	rwLockSlice := rwSlice.(*RwLockSlice)
 
-	ctns := []*ExtendedContainerInfo{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
+	ctns := rwLockSlice.ctns
+	for _, val := range ctns {
+		container := val
 		container.Lock()
 		if container.usable && len(container.requests) < 1 {
 			container.requests[req.RequestId] = 1
@@ -96,21 +90,24 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 			break
 		}
 		container.Unlock()
-		ctns = append(ctns, container)
 	}
-	ctn_ids.RUnlock()
 
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
-		ctn, err := r.CreateNewCntFromNode(req, 1.0)
-		if err != nil {
-			if len(ctns) > 0 {
-				res = fallbackChooseCtn(ctns)
+		go r.CreateNewCntFromNode(req, 1.0)
+		funcExeMode := r.getFuncExeMode(req)
+		for {
+			if funcExeMode == MemIntensive {
+				res = r.fallbackChooseCtn4MemIntensive(req.RequestId, rwLockSlice.ctns)
+				if res != nil {
+					break
+				}
 			} else {
-				return nil, err
+				if len(rwLockSlice.ctns) > 0 {
+					res = fallbackChooseCtn(rwLockSlice.ctns)
+					break
+				}
 			}
-		} else {
-			res = ctn
 		}
 	}
 
@@ -129,21 +126,12 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	// if not ok, panic
 	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
 
-	ctn_ids := rwLockSlice.(*RwLockSlice)
+	lockSlice := rwLockSlice.(*RwLockSlice)
 
-	ctns := []*ExtendedContainerInfo{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
-		ctns = append(ctns, container)
+	ctns := lockSlice.ctns
+	if len(ctns) > 0 {
+		sortCtnByMemUsage(ctns)
 	}
-	ctn_ids.RUnlock()
-	sortCtnByMemUsage(ctns)
 	for _, ctn := range ctns {
 		//if ctn.isCpuOrMemUsageHigh() {
 		//	continue
@@ -159,15 +147,12 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	}
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
-		ctn, err := r.CreateNewCntFromNode(req, 1.0)
-		if err != nil {
-			if len(ctns) > 0 {
-				res = fallbackChooseCtn(ctns)
-			} else {
-				return nil, err
+		go r.CreateNewCntFromNode(req, 1.0)
+		for {
+			if len(lockSlice.ctns) > 0 {
+				res = fallbackChooseCtn(lockSlice.ctns)
+				break
 			}
-		} else {
-			res = ctn
 		}
 	}
 	return &pb.AcquireContainerReply{
@@ -182,6 +167,23 @@ func fallbackChooseCtn(ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
 	size := len(ctns)
 	idx := random.Intn(size)
 	return ctns[idx]
+}
+
+func (r *Router) fallbackChooseCtn4MemIntensive(req string, ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
+	var res *ExtendedContainerInfo
+
+	for _, val := range ctns {
+		container := val
+		container.Lock()
+		if container.usable && len(container.requests) < 1 {
+			container.requests[req] = 1
+			res = container
+			container.Unlock()
+			break
+		}
+		container.Unlock()
+	}
+	return res
 }
 
 // if no idle container exists
@@ -237,7 +239,7 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 	ctns, _ := r.fn2ctnSlice.Get(req.FunctionName)
 	ctn_ids := ctns.(*RwLockSlice)
 	ctn_ids.Lock()
-	ctn_ids.ctns = append(ctn_ids.ctns, res.id)
+	ctn_ids.ctns = append(ctn_ids.ctns, res)
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)

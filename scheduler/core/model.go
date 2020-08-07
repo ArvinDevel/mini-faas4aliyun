@@ -37,11 +37,14 @@ type ExtendedContainerInfo struct {
 	outlierCnt int
 	usable     bool    `whether is usable used for indicate deleting`
 	priority   float64 `(0-1]more less more high priority`
+
+	SumDurationInMs float64
+	Cnt             float64 `finished fn cnt`
 }
 
 type RwLockSlice struct {
 	sync.RWMutex
-	ctns []string
+	ctns []*ExtendedContainerInfo
 }
 type Router struct {
 	nodeMap cmap.ConcurrentMap // instance_id -> ExtendedNodeInfo
@@ -103,8 +106,9 @@ func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {
 }
 
 func (ctn *ExtendedContainerInfo) String() string {
-	return fmt.Sprintf("Ctn for %s, [%s,%s,%v],mem:%f/%f, cpu:%f ,active req: %d ",
+	return fmt.Sprintf("Ctn for %s, [%s,%s,%v],mem:%f/%f, cpu:%f ,active req: %d ,duration: %f/%f",
 		ctn.fn, ctn.address, ctn.id, ctn.usable,
 		ctn.MemoryUsageInBytes, ctn.ReqMemoryInBytes, ctn.CpuUsagePct,
-		len(ctn.requests))
+		len(ctn.requests),
+		ctn.SumDurationInMs, ctn.Cnt)
 }
