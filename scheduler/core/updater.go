@@ -75,8 +75,14 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		return ctns[i].CpuUsagePct > ctns[j].CpuUsagePct
 	})
 	if len(ctns) > 1 {
-		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 1.5 && ctns[0].outlierCnt < outlierThreshold {
-			logger.Warningf("%v use more cpu on %s", ctns[0], node)
+		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 1.5 {
+			finfoObj, _ := r.fn2finfoMap.Get(ctns[0].fn)
+			finfo := finfoObj.(*model.FuncInfo)
+			finfo.CpuOverCnt++
+			if finfo.CpuOverCnt/finfo.Cnt > 2 {
+				logger.Warningf("use more cpu on %v, change %v to cpu intensive", node, finfo)
+				finfo.State = model.CpuIntensive
+			}
 			// todo reschedule this
 		}
 	}
@@ -128,7 +134,9 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
 				go r.boostCtnAction(fn)
-				go r.addNewNodeAndCtnsAction(fn)
+				if finfo.State != model.CpuIntensive {
+					go r.addNewNodeAndCtnsAction(fn)
+				}
 			}
 		}
 	}

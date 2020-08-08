@@ -12,16 +12,13 @@ const (
 	Dense       // 密集型
 )
 
-type FnState int
+type FnMode int
 
 //Inited state don't need remeto get ctn, just spin-waiting,
 // Exited state resources should be clear
 const (
-	Initing FnState = iota
-	Inited
-	Expanding
-	Shinking
-	Exited
+	None FnMode = iota
+	CpuIntensive
 )
 
 type RequestInfo struct {
@@ -59,12 +56,14 @@ type FuncInfo struct {
 	Handler           string
 	TimeOverThreshold bool
 
-	State FnState
+	State      FnMode
+	CpuOverCnt int64
 }
 
 func (finfo *FuncInfo) String() string {
-	return fmt.Sprintf("Fn cnt: %d, duration:%d,%d,%d, mem:%d/%d",
+	return fmt.Sprintf("Fn cnt: %d, duration:%d,%d,%d, mem:%d/%d, cpuOverCnt:%d",
 		finfo.Cnt,
 		finfo.MinDurationInMs, finfo.MaxDurationInMs, finfo.SumDurationInMs,
-		finfo.MaxMemoryUsageInBytes, finfo.MemoryInBytes)
+		finfo.MaxMemoryUsageInBytes, finfo.MemoryInBytes,
+		finfo.CpuOverCnt)
 }

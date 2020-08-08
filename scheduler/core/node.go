@@ -62,7 +62,7 @@ func (node *ExtendedNodeInfo) String() string {
 		node.address, node.nodeID,
 		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.availableMemInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
 		node.failedCnt,
-		node.fn2Cnt)
+		node.fn2Cnt.Items())
 }
 
 func (node *ExtendedNodeInfo) isCpuOrMemUsageHigh() bool {
