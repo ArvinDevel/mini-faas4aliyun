@@ -160,7 +160,7 @@ func (r *Router) addNewNodeAndCtnsAction(fn string) {
 			logger.Errorf("constructAcquireCtnReq when addNewNodeAndCtnsAction for %s", fn)
 			continue
 		}
-		r.CreateNewCntFromNode(req, 0.7)
+		r.createNewCntOnNode(req, 0.7, node)
 	}
 }
 
@@ -187,6 +187,7 @@ func (r *Router) boostCtnAction(fn string) {
 				continue
 			}
 			logger.Infof("begin add one ctn for fn %s", fn)
+			// todo fix bug:specify node
 			r.CreateNewCntFromNode(req, 1.0)
 		}
 	}
