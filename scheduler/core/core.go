@@ -13,28 +13,14 @@ import (
 	"time"
 )
 
-// todo default use serial req mode
-func (r *Router) getFuncExeMode(req *pb.AcquireContainerRequest) FuncExeMode {
-	// todo use basic ratio FIRST PRIORITY ！use stats
-	fn := req.FunctionName
-	finfoObj, ok := r.fn2finfoMap.Get(fn)
-	if ok {
-		finfo := finfoObj.(*model.FuncInfo)
-		memUsage := float64(finfo.MaxMemoryUsageInBytes) / float64(finfo.MemoryInBytes)
-		if memUsage > ctnMemHighThreshold {
-			return MemIntensive
-		}
-	}
-	return ResourceLess
-}
-
-func (r *Router) pickCntAccording2ExeMode(exeMode FuncExeMode, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+func (r *Router) pickCntAccording2ExeMode(exeMode model.FuncExeMode, req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
 	switch exeMode {
-	case CpuIntensive:
-		return r.pickCnt4CpuIntensive(req);
-	case MemIntensive:
-		return r.pickCnt4MemIntensive(req);
-	case ResourceLess:
+	case model.CpuIntensive:
+		return r.pickCnt4CpuIntensive(req, exeMode);
+	case model.MemIntensive:
+		return r.pickCnt4MemIntensive(req, exeMode);
+	case model.ResourceLess:
+	case model.None:
 		return r.pickCnt4ResourceLess(req);
 	}
 	logger.Errorf("Unrecognized exeMode %s", exeMode)
@@ -45,10 +31,10 @@ func (r *Router) pickCnt4ResourceLess(req *pb.AcquireContainerRequest) (*pb.Acqu
 	return r.pickCnt4ParallelReq(req);
 }
 
-func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest, exemode model.FuncExeMode) (*pb.AcquireContainerReply, error) {
 	// cpu intensive: reduce mem usage, guarantee cpu by use serial strategy
 	r.reduceReqMem(req)
-	return r.pickCnt4SerialReq(req);
+	return r.pickCnt4SerialReq(req, exemode);
 }
 
 func (r *Router) reduceReqMem(req *pb.AcquireContainerRequest) {
@@ -65,12 +51,12 @@ func (r *Router) reduceReqMem(req *pb.AcquireContainerRequest) {
 	}
 }
 
-func (r *Router) pickCnt4MemIntensive(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
-	return r.pickCnt4SerialReq(req);
+func (r *Router) pickCnt4MemIntensive(req *pb.AcquireContainerRequest, exemode model.FuncExeMode) (*pb.AcquireContainerReply, error) {
+	return r.pickCnt4SerialReq(req, exemode);
 }
 
 // 只适合串行执行的：资源竞争激烈的，cpu/mem占用率极高
-func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.AcquireContainerReply, error) {
+func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest, exemode model.FuncExeMode) (*pb.AcquireContainerReply, error) {
 	var res *ExtendedContainerInfo
 
 	fn := req.FunctionName
@@ -95,10 +81,9 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
 		go r.CreateNewCntFromNode(req, 1.0)
-		funcExeMode := r.getFuncExeMode(req)
 		for {
 			if len(rwLockSlice.ctns) > 0 {
-				if funcExeMode == MemIntensive {
+				if exemode == model.MemIntensive {
 					res = r.fallbackChooseCtn4MemIntensive(req.RequestId, rwLockSlice.ctns)
 					if res != nil {
 						break
@@ -127,6 +112,9 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	var res *ExtendedContainerInfo
 
 	fn := req.FunctionName
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
+	finfo := finfoObj.(*model.FuncInfo)
+	reqThreshold := finfo.ReqThreshold
 	// if not ok, panic
 	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
 
@@ -141,7 +129,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		//	continue
 		//}
 		ctn.Lock()
-		if ctn.usable && len(ctn.requests) < parallelReqNum {
+		if ctn.usable && len(ctn.requests) < reqThreshold {
 			ctn.requests[req.RequestId] = 1
 			res = ctn
 			ctn.Unlock()
@@ -151,7 +139,13 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	}
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
-		r.createNewCntInEveryNode(req, 1.0)
+		if len(lockSlice.ctns) == 0 {
+			r.createNewCntInEveryNode(req, 1.0)
+		}
+		if len(lockSlice.ctns) >= len(values) {
+			logger.Warningf("begin CreateNewCntFromNode for %s,%v", fn, finfo)
+			go r.CreateNewCntFromNode(req, 1.0)
+		}
 		for {
 			if len(lockSlice.ctns) > 0 {
 				res = fallbackChooseCtn(lockSlice.ctns)
@@ -215,9 +209,6 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 	fn := req.FunctionName
 	var res *ExtendedContainerInfo
 
-	node.Lock()
-	node.reqCnt += 1
-	node.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	replyC, err := node.CreateContainer(ctx, &nsPb.CreateContainerRequest{
@@ -236,11 +227,6 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 		logger.Errorf("failed to create container on %s", node.address, err)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
-	// reset node info
-
-	node.Lock()
-	node.reqCnt -= 1
-	node.Unlock()
 
 	res = &ExtendedContainerInfo{
 		id:               replyC.ContainerId,
@@ -262,7 +248,7 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)
-	logger.Infof("createNewCntFromNode for %s to %s,rpc lat %d, lat %d ",
+	logger.Infof("createNewCntOnNode for %s to %s,rpc lat %d, lat %d ",
 		fn, node.address, rpcDelay, (time.Now().UnixNano()-now)/1e6)
 	return res, nil
 }

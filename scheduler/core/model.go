@@ -11,15 +11,6 @@ import (
 	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
 )
 
-type FuncExeMode int
-
-//choose adequate resource according to FuncExeMode
-const (
-	CpuIntensive FuncExeMode = iota // acquire resource as fast as , cpu locate
-	MemIntensive                    // acquire resource as fast as , mem locate
-	ResourceLess                    // reuse old container
-)
-
 type ExtendedContainerInfo struct {
 	sync.Mutex
 	id       string
@@ -60,6 +51,8 @@ type Router struct {
 const funTimeout = 60000
 
 var slack int64 = 5 * 1000 * 1000
+
+var gibyte float64 = 4 * 1024 * 1024 * 1024
 
 var mockStr = "mock-reqId/acctId"
 

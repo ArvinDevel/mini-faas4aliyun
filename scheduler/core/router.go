@@ -76,8 +76,7 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	funChan <- fn
 	r.requestMap.Set(req.RequestId, fn)
 	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{
-		// todo use adaquate size
-		ctns: make([]*ExtendedContainerInfo, 0, 10),
+		ctns: make([]*ExtendedContainerInfo, 0, 15),
 	})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
 		TimeoutInMs:       req.FunctionConfig.TimeoutInMs,
@@ -85,9 +84,12 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 		Handler:           req.FunctionConfig.Handler,
 		MinDurationInMs:   2000000,
 		TimeOverThreshold: false,
+		CpuThreshold:      float64(req.FunctionConfig.MemoryInBytes)/gibyte*67 - 2,
+		ReqThreshold:      parallelReqNum,
 	})
-	funcExeMode := r.getFuncExeMode(req)
-	return r.pickCntAccording2ExeMode(funcExeMode, req)
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
+	finfo := finfoObj.(*model.FuncInfo)
+	return r.pickCntAccording2ExeMode(finfo.Exemode, req)
 }
 
 var values = []*ExtendedNodeInfo{}
@@ -119,6 +121,10 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		staticAcctId = accountId
 		r.remoteGetNode(accountId)
 		r.warmup(8)
+	}
+	if len(values) < 15 {
+		logger.Warningf("begin expand node when no node satisfy")
+		go r.remoteGetNode(staticAcctId)
 	}
 	if len(values) > 0 {
 		return r.fallbackUseLocalNode()
@@ -163,9 +169,6 @@ func (r *Router) fallbackUseLocalNode() (*ExtendedNodeInfo, error) {
 		if values[i].CpuUsagePct > nodeCpuHighThreshold {
 			return false
 		}
-		if values[i].failedCnt > nodeFailedCntThreshold {
-			return false
-		}
 		if values[i].MemoryUsageInBytes/values[i].TotalMemoryInBytes > nodeMemHighThreshold {
 			return false
 		}
@@ -183,7 +186,6 @@ func (r *Router) fallbackUseLocalNode() (*ExtendedNodeInfo, error) {
 
 func (r *Router) handleContainerErr(node *ExtendedNodeInfo, functionMem int64) {
 	node.Lock()
-	node.failedCnt += 1
 	node.availableMemInBytes += functionMem
 	node.Unlock()
 }
@@ -230,6 +232,14 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	finfo.SumDurationInMs += curentDuration
 	finfo.Cnt += 1
 
+	// update fun exe mode
+	memUsage := float64(finfo.MaxMemoryUsageInBytes) / float64(finfo.MemoryInBytes)
+	if finfo.Exemode != model.MemIntensive && memUsage > ctnMemHighThreshold {
+		logger.Infof("update %s mode from %d to %d, since %f",
+			fn, finfo.Exemode, model.MemIntensive, memUsage)
+		finfo.Exemode = model.MemIntensive
+	}
+
 	ctnInfo, ok := r.ctn2info.Get(res.ContainerId)
 	if !ok {
 		return errors.Errorf("no container found with id %s", res.ContainerId)
@@ -238,8 +248,10 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	container.SumDurationInMs += float64(curentDuration)
 	container.Cnt += 1
 	delete(container.requests, res.ID)
-	logger.Infof("ReturnContainer %d, %v, %v",
-		curentDuration, finfo, container)
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	logger.Infof("ReturnContainer %d, %v, %v, ctns size :%d",
+		curentDuration, finfo, container, len(ctnSlice.ctns))
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release
@@ -313,13 +325,7 @@ func sortNodeByUsage(values []*ExtendedNodeInfo) {
 		if values[i].CpuUsagePct > nodeCpuHighThreshold {
 			return false
 		}
-		if values[i].failedCnt > nodeFailedCntThreshold {
-			return false
-		}
 		if values[i].MemoryUsageInBytes/values[i].TotalMemoryInBytes > nodeMemHighThreshold {
-			return false
-		}
-		if values[i].reqCnt > 100 {
 			return false
 		}
 		if (values[i].AvailableMemoryInBytes > 0 && values[j].AvailableMemoryInBytes > 0) {
@@ -331,6 +337,6 @@ func sortNodeByUsage(values []*ExtendedNodeInfo) {
 		if (values[i].availableMemInBytes > values[j].availableMemInBytes) {
 			return true
 		}
-		return values[i].failedCnt < values[j].failedCnt
+		return true
 	})
 }

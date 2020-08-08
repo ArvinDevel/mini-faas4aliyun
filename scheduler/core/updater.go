@@ -62,29 +62,77 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		container.CpuUsagePct = ctnStat.CpuUsagePct
 		ctns = append(ctns, container)
 	}
-	//sort.Slice(ctns, func(i, j int) bool {
-	//	return ctns[i].MemoryUsageInBytes > ctns[j].MemoryUsageInBytes
-	//})
-	//if len(ctns) > 1 {
-	//	if ctns[0].MemoryUsageInBytes/ctns[1].MemoryUsageInBytes > 1.5 {
-	//		logger.Warningf("%v use more mem on %s", ctns[0], node)
-	//	}
-	//}
-
-	sort.Slice(ctns, func(i, j int) bool {
-		return ctns[i].CpuUsagePct > ctns[j].CpuUsagePct
-	})
-	if len(ctns) > 1 {
-		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 10 {
-			finfoObj, _ := r.fn2finfoMap.Get(ctns[0].fn)
-			finfo := finfoObj.(*model.FuncInfo)
-			finfo.CpuOverCnt++
-			if finfo.State != model.CpuIntensive && finfo.Cnt != 0 && finfo.CpuOverCnt/finfo.Cnt > 2 {
-				logger.Warningf("use more cpu on %v, change %s %v to cpu intensive",
-					node, ctns[0].fn, finfo)
-				finfo.State = model.CpuIntensive
+	for _, ctn := range ctns {
+		finfoObj, _ := r.fn2finfoMap.Get(ctn.fn)
+		finfo := finfoObj.(*model.FuncInfo)
+		// todo 如果存在误报，需要增加次数来避免
+		if ctn.CpuUsagePct > finfo.CpuThreshold {
+			if finfo.Exemode != model.CpuIntensive {
+				logger.Warningf("ctn %v use more cpu on %v, change %v to cpu intensive",
+					ctns[0], node, finfo)
+				if finfo.Exemode == model.MemIntensive {
+					logger.Warningf("fn %s is mem intensive, NOT change to cpu intensive",
+						ctn.fn)
+				} else {
+					finfo.Exemode = model.CpuIntensive
+					r.updateNodeInfo(ctn.fn, -finfo.CpuThreshold-2.0, finfo.MemoryInBytes-finfo.ActualUsedMemInBytes)
+					r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
+				}
+			} else {
+				r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
 			}
-			// todo reschedule this
+		}
+	}
+}
+
+func (r *Router) checkAndTrigerExpand(fn string, qps int, cpuThreshold float64) {
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	currentCtnSize := len(ctnSlice.ctns)
+	if currentCtnSize < qps {
+		r.expand4MemIntensiveCtn(fn, qps-currentCtnSize, cpuThreshold)
+	}
+}
+
+func (r *Router) expand4MemIntensiveCtn(fn string, requireCnt int, cpuThreshod float64) {
+	logger.Infof("begin expand4MemIntensiveCtn for %s, %d", fn, requireCnt)
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].availableCpu > values[j].availableCpu
+	})
+	expanedCnt := 0
+	for _, node := range values {
+		if node.availableCpu < cpuThreshod {
+			break
+		}
+		req := r.constructAcquireCtnReq(fn)
+		node.Lock()
+		node.availableCpu -= cpuThreshod
+		node.Unlock()
+		r.createNewCntOnNode(req, 1.0, node)
+		expanedCnt++
+		if expanedCnt == requireCnt {
+			break
+		}
+	}
+	if expanedCnt == 0 {
+		logger.Warningf("zero cnt expand for %s,so remote aquire node", fn)
+		r.remoteGetNode(staticAcctId)
+	}
+	// todo add more again
+	if expanedCnt < requireCnt {
+		logger.Warningf("expand %d less than requried %d", expanedCnt, requireCnt)
+	}
+}
+
+// when fn mode is update, update node resource
+func (r *Router) updateNodeInfo(fn string, cpuDelta float64, memDelta int64) {
+	for _, node := range values {
+		if v, ok := node.fn2Cnt.Get(fn); ok {
+			fnCnt := v.(int64)
+			node.Lock()
+			node.availableCpu += float64(fnCnt) * cpuDelta
+			node.availableMemInBytes += fnCnt * memDelta
+			node.Unlock()
 		}
 	}
 }
@@ -115,10 +163,6 @@ func (r *Router) CalQps() {
 	}
 }
 
-// todo reschedule 不均衡的各个节点
-func (r *Router) ReSchedule() {
-}
-
 func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
 		r.checkFn(fn)
@@ -129,15 +173,19 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 				continue
 			}
 			finfo := finfoObj.(*model.FuncInfo)
+			if finfo.Qps < cnt {
+				logger.Infof("update %s qps from %d to %d", fn, finfo.Qps, cnt)
+				finfo.Qps = cnt
+			}
 			finfo.DenseCnt += 1
 			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
 				logger.Infof("change fn %s mode from %v to %v",
 					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
 				go r.boostCtnAction(fn)
-				if finfo.State != model.CpuIntensive {
-					go r.addNewNodeAndCtnsAction(fn)
-				}
+				//if finfo.Exemode != model.CpuIntensive {
+				//	go r.addNewNodeAndCtnsAction(fn)
+				//}
 			}
 		}
 	}
@@ -203,16 +251,12 @@ func (r *Router) boostCtnAction(fn string) {
 }
 
 func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
-	finfoObj, ok := r.fn2finfoMap.Get(fn)
-	if !ok {
-		logger.Errorf("no func info for the fn %s when constructAcquireCtnReq", fn)
-		return nil
-	}
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
 	finfo := finfoObj.(*model.FuncInfo)
 	funcConfig := &pb.FunctionConfig{
 		Handler:       finfo.Handler,
 		TimeoutInMs:   finfo.TimeoutInMs,
-		MemoryInBytes: finfo.MemoryInBytes,
+		MemoryInBytes: finfo.ActualUsedMemInBytes,
 	}
 	reqId := uuid.NewV4().String()
 	return &pb.AcquireContainerRequest{
@@ -234,14 +278,15 @@ func (r *Router) checkFn(fn string) {
 		return
 	}
 	ratio := float64(finfo.SumDurationInMs/finfo.Cnt) / float64(finfo.MinDurationInMs)
-	if ratio > 1.2 && !finfo.TimeOverThreshold {
-		logger.Warningf("fn %v time over 20%, change state 2 over", fn)
-		finfo.TimeOverThreshold = true
-		// todo if fn is peroricall, then reschedule it
-	}
-	if ratio <= 1.2 && finfo.TimeOverThreshold {
-		logger.Warningf("fn %v time over recover , change state ", fn)
-		finfo.TimeOverThreshold = false
+	if ratio > 1.2 && finfo.Exemode != model.MemIntensive && finfo.Exemode != model.CpuIntensive {
+		target := int(float64(parallelReqNum) / ratio)
+		if target < 1 {
+			target = 1
+		}
+		if finfo.ReqThreshold != target {
+			logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
+			finfo.ReqThreshold = target
+		}
 	}
 }
 func (r *Router) ReleaseCtnResource() {

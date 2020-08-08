@@ -17,6 +17,7 @@ type ExtendedNodeInfo struct {
 	address             string
 	port                int64
 	availableMemInBytes int64
+	availableCpu        float64
 
 	conn *grpc.ClientConn
 	pb.NodeServiceClient
@@ -27,10 +28,6 @@ type ExtendedNodeInfo struct {
 	AvailableMemoryInBytes float64 `protobuf:"varint,3,opt,name=available_memory_in_bytes,json=availableMemoryInBytes,proto3" json:"available_memory_in_bytes,omitempty"`
 	CpuUsagePct            float64
 	ctnCnt                 int
-	// used to forbidden access to failed node
-	failedCnt int
-
-	reqCnt int
 
 	fn2Cnt cmap.ConcurrentMap
 }
@@ -49,6 +46,7 @@ func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, err
 		conn:                conn,
 		NodeServiceClient:   pb.NewNodeServiceClient(conn),
 		fn2Cnt:              cmap.New(),
+		availableCpu:        200.0,
 	}, nil
 }
 
@@ -58,18 +56,15 @@ func (n *ExtendedNodeInfo) Close() {
 }
 
 func (node *ExtendedNodeInfo) String() string {
-	return fmt.Sprintf("Node [%s,%s ],mem:%f/%f,%d, %f, cpu:%f ,failed: %d, ctns: %v ",
+	return fmt.Sprintf("Node [%s,%s ],mem:%f/%f,%d, %f, cpu:%f, %f , ctns: %v ",
 		node.address, node.nodeID,
-		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.availableMemInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
-		node.failedCnt,
+		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.availableMemInBytes, node.AvailableMemoryInBytes,
+		node.CpuUsagePct, node.availableCpu,
 		node.fn2Cnt.Items())
 }
 
 func (node *ExtendedNodeInfo) isCpuOrMemUsageHigh() bool {
 	if node.MemoryUsageInBytes/node.TotalMemoryInBytes > nodeMemHighThreshold {
-		return true
-	}
-	if node.CpuUsagePct > nodeCpuHighThreshold {
 		return true
 	}
 	return false
