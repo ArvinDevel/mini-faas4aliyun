@@ -89,7 +89,16 @@ func (r *Router) checkAndTrigerExpand(fn string, qps int, cpuThreshold float64) 
 	rw, _ := r.fn2ctnSlice.Get(fn)
 	ctnSlice := rw.(*RwLockSlice)
 	currentCtnSize := len(ctnSlice.ctns)
-	if currentCtnSize < qps {
+	max := qps
+	for _, ctn := range ctnSlice.ctns {
+		avtiveReq := len(ctn.requests)
+		if avtiveReq > max {
+			logger.Warningf("active req %d for %s large than ori max %d qps %d",
+				avtiveReq, fn, max, qps)
+			max = avtiveReq
+		}
+	}
+	if currentCtnSize < max {
 		r.expand4MemIntensiveCtn(fn, qps-currentCtnSize, cpuThreshold)
 	}
 }
@@ -268,27 +277,61 @@ func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
 }
 
 func (r *Router) checkFn(fn string) {
-	finfoObj, ok := r.fn2finfoMap.Get(fn)
-	if !ok {
-		logger.Errorf("no func info for the fn %s when checkFn", fn)
-		return
-	}
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
 	finfo := finfoObj.(*model.FuncInfo)
 	if finfo.Cnt == 0 {
 		return
 	}
 	ratio := float64(finfo.SumDurationInMs/finfo.Cnt) / float64(finfo.MinDurationInMs)
 	if ratio > 1.2 && finfo.Exemode != model.MemIntensive && finfo.Exemode != model.CpuIntensive {
-		target := int(float64(parallelReqNum) / ratio)
-		if target < 1 {
-			target = 1
-		}
-		if finfo.ReqThreshold != target {
-			logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
-			finfo.ReqThreshold = target
-		}
+		// todo check ctn parallel req, not all can solve by reduce parallel:transfer ctn from busy node
+		r.checkOutlierCtn(fn, float64(finfo.SumDurationInMs/finfo.Cnt))
+		//target := int(float64(parallelReqNum) / ratio)
+		//if target < 1 {
+		//	target = 1
+		//}
+		//if finfo.ReqThreshold != target {
+		//	logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
+		//	finfo.ReqThreshold = target
+		//}
 	}
 }
+
+func (r *Router) checkOutlierCtn(fn string, avgDuration float64) {
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	ctns := ctnSlice.ctns
+	avgUsages := []float64{}
+	idx := 0
+	max := avgDuration
+	for id, ctn := range ctns {
+		ctnAvgDuration := ctn.SumDurationInMs / ctn.Cnt
+		if ctnAvgDuration > max {
+			idx = id
+			max = ctnAvgDuration
+		}
+		avgUsages = append(avgUsages, ctnAvgDuration)
+	}
+	if max/avgDuration > 2.0 {
+		// todo disable ctn and re aquire one
+		logger.Warningf("ctn %v over %f of avg for %s",
+			ctns[idx], max/avgDuration, fn)
+
+	}
+}
+
+func (r *Router) releaseUnusedCtnAndAcuireNewOne(fn string) {
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	currentCtnSize := len(ctnSlice.ctns)
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
+	finfo := finfoObj.(*model.FuncInfo)
+	qps := finfo.Qps
+	if currentCtnSize < qps {
+		logger.Infof("todo check whether need re-aquire ctn")
+	}
+}
+
 func (r *Router) ReleaseCtnResource() {
 	// release unused ctn async predicolly:only keep one replica
 	// NOT APPLYED for mem intensive:

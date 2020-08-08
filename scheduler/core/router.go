@@ -132,6 +132,40 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 	return nil, errors.Errorf("NO NODE!")
 }
 
+func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cpuThreshod float64) (*ExtendedNodeInfo, error) {
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].availableCpu > values[j].availableCpu
+	})
+	for _, node := range values {
+		// todo consider cpu
+		//if node.availableCpu < cpuThreshod {
+		//	break
+		//}
+		// 不超卖
+		node.Lock()
+
+		if node.availableMemInBytes > memoryReq {
+			node.availableMemInBytes -= memoryReq
+			node.Unlock()
+			return node, nil
+		}
+		node.Unlock()
+	}
+	logger.Infof("getNodeWithMemAndCpuCheck current nodes %s can't affoard %d", values, memoryReq)
+
+	if len(values) < 18 {
+		logger.Warningf("getNodeWithMemAndCpuCheck begin expand node when no node satisfy")
+		node, err := r.remoteGetNode(staticAcctId)
+		if err == nil {
+			return node, nil
+		}
+	}
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].availableCpu > values[j].availableCpu
+	})
+	return values[0], nil
+}
+
 func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelR()

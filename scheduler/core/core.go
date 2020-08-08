@@ -204,6 +204,25 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 	return r.createNewCntOnNode(req, priority, node)
 }
 
+func (r *Router) CreateNewCntFromOnDemandNode(req *pb.AcquireContainerRequest, priority float64) (*ExtendedContainerInfo, error) {
+	cpuThreshold := float64(req.FunctionConfig.MemoryInBytes) / gibyte * 67
+	node, err := r.getNodeWithMemAndCpuCheck(req.AccountId, req.FunctionConfig.MemoryInBytes, cpuThreshold)
+	if err != nil {
+		return nil, err
+	}
+	fn := req.FunctionName
+	node.Lock()
+	if cnt, ok := node.fn2Cnt.Get(fn); ok {
+		node.fn2Cnt.Set(fn, cnt.(int)+1)
+	} else {
+		logger.Warningf("node %v still doesn't has ctn for %s", node, fn)
+		node.fn2Cnt.Set(fn, 1)
+	}
+	node.Unlock()
+
+	return r.createNewCntOnNode(req, priority, node)
+}
+
 func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority float64, node *ExtendedNodeInfo) (*ExtendedContainerInfo, error) {
 	now := time.Now().UnixNano()
 	fn := req.FunctionName
