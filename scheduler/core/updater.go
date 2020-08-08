@@ -75,12 +75,13 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		return ctns[i].CpuUsagePct > ctns[j].CpuUsagePct
 	})
 	if len(ctns) > 1 {
-		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 1.5 {
+		if ctns[0].CpuUsagePct/ctns[1].CpuUsagePct > 10 {
 			finfoObj, _ := r.fn2finfoMap.Get(ctns[0].fn)
 			finfo := finfoObj.(*model.FuncInfo)
 			finfo.CpuOverCnt++
-			if finfo.CpuOverCnt/finfo.Cnt > 2 {
-				logger.Warningf("use more cpu on %v, change %v to cpu intensive", node, finfo)
+			if finfo.State != model.CpuIntensive && finfo.Cnt != 0 && finfo.CpuOverCnt/finfo.Cnt > 2 {
+				logger.Warningf("use more cpu on %v, change %s %v to cpu intensive",
+					node, ctns[0].fn, finfo)
 				finfo.State = model.CpuIntensive
 			}
 			// todo reschedule this
