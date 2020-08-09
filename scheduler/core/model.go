@@ -86,6 +86,8 @@ var rtnCtnChan = make(chan interface{}, 1000)
 var reScheduleDuration = time.Duration(time.Second * 10)
 
 var random = rand.New(rand.NewSource(time.Now().UnixNano()))
+// used to limit aquire req, too many parallel will hang node service
+var globalLock = sync.Mutex{}
 
 // util/helper
 func (ctn *ExtendedContainerInfo) isCpuOrMemUsageHigh() bool {

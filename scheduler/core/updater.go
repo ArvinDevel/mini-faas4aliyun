@@ -6,7 +6,6 @@ import (
 	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"github.com/satori/go.uuid"
-	"sort"
 	"time"
 )
 
@@ -47,7 +46,7 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	node.ctnCnt = len(ctnStatList)
 
 	if node.isCpuOrMemUsageHigh() {
-		logger.Warningf("node %v warn", node)
+		logger.Warningf(" %v mem high", node)
 	}
 
 	ctns := []*ExtendedContainerInfo{}
@@ -78,9 +77,10 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 					r.updateNodeInfo(ctn.fn, -finfo.CpuThreshold-2.0, finfo.MemoryInBytes-finfo.ActualUsedMemInBytes)
 					r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
 				}
-			} else {
-				r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
 			}
+			//else { // cause too much req
+			//	r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
+			//}
 		}
 	}
 }
@@ -99,37 +99,26 @@ func (r *Router) checkAndTrigerExpand(fn string, qps int, cpuThreshold float64) 
 		}
 	}
 	if currentCtnSize < max {
-		r.expand4MemIntensiveCtn(fn, qps-currentCtnSize, cpuThreshold)
+		r.expand4MemIntensiveCtn(fn, max-currentCtnSize, cpuThreshold)
 	}
 }
 
 func (r *Router) expand4MemIntensiveCtn(fn string, requireCnt int, cpuThreshod float64) {
 	logger.Infof("begin expand4MemIntensiveCtn for %s, %d", fn, requireCnt)
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].availableCpu > values[j].availableCpu
-	})
-	expanedCnt := 0
-	for _, node := range values {
-		if node.availableCpu < cpuThreshod {
-			break
+
+	failedCnt := 0
+	req := r.constructAcquireCtnReq(fn)
+	for i := 0; i < requireCnt; i++ {
+		node, _ := r.getNodeWithMemAndCpuCheck(staticAcctId, req.FunctionConfig.MemoryInBytes, cpuThreshod)
+		if _, err := r.createNewCntOnNode(req, 1.0, node);
+			err != nil {
+			failedCnt++;
 		}
-		req := r.constructAcquireCtnReq(fn)
-		node.Lock()
-		node.availableCpu -= cpuThreshod
-		node.Unlock()
-		r.createNewCntOnNode(req, 1.0, node)
-		expanedCnt++
-		if expanedCnt == requireCnt {
-			break
-		}
-	}
-	if expanedCnt == 0 {
-		logger.Warningf("zero cnt expand for %s,so remote aquire node", fn)
-		r.remoteGetNode(staticAcctId)
 	}
 	// todo add more again
-	if expanedCnt < requireCnt {
-		logger.Warningf("expand %d less than requried %d", expanedCnt, requireCnt)
+	if failedCnt > 0 {
+		logger.Warningf("expand failed %d requried %d for fn %s",
+			failedCnt, requireCnt, fn)
 	}
 }
 
@@ -265,7 +254,7 @@ func (r *Router) constructAcquireCtnReq(fn string) *pb.AcquireContainerRequest {
 	funcConfig := &pb.FunctionConfig{
 		Handler:       finfo.Handler,
 		TimeoutInMs:   finfo.TimeoutInMs,
-		MemoryInBytes: finfo.ActualUsedMemInBytes,
+		MemoryInBytes: finfo.MemoryInBytes,
 	}
 	reqId := uuid.NewV4().String()
 	return &pb.AcquireContainerRequest{
@@ -314,7 +303,7 @@ func (r *Router) checkOutlierCtn(fn string, avgDuration float64) {
 	}
 	if max/avgDuration > 2.0 {
 		// todo disable ctn and re aquire one
-		logger.Warningf("ctn %v over %f of avg for %s",
+		logger.Warningf(" %v  %f of  avg for %s duration ",
 			ctns[idx], max/avgDuration, fn)
 
 	}

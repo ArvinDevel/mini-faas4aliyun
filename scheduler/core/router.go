@@ -137,15 +137,14 @@ func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cp
 		return values[i].availableCpu > values[j].availableCpu
 	})
 	for _, node := range values {
-		// todo consider cpu
-		//if node.availableCpu < cpuThreshod {
-		//	break
-		//}
+		if node.availableCpu < cpuThreshod {
+			break
+		}
 		// 不超卖
 		node.Lock()
-
 		if node.availableMemInBytes > memoryReq {
 			node.availableMemInBytes -= memoryReq
+			node.availableCpu -= cpuThreshod
 			node.Unlock()
 			return node, nil
 		}

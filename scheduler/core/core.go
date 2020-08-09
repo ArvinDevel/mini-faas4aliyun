@@ -33,7 +33,8 @@ func (r *Router) pickCnt4ResourceLess(req *pb.AcquireContainerRequest) (*pb.Acqu
 
 func (r *Router) pickCnt4CpuIntensive(req *pb.AcquireContainerRequest, exemode model.FuncExeMode) (*pb.AcquireContainerReply, error) {
 	// cpu intensive: reduce mem usage, guarantee cpu by use serial strategy
-	r.reduceReqMem(req)
+	// CAN"T reduce mem for cpuintensive, since assign cpu according to mem
+	//r.reduceReqMem(req)
 	return r.pickCnt4SerialReq(req, exemode);
 }
 
@@ -80,7 +81,9 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest, exemode mode
 
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
-		go r.CreateNewCntFromNode(req, 1.0)
+		if exemode == model.MemIntensive {
+			go r.CreateNewCntFromNode(req, 1.0)
+		}
 		for {
 			if len(rwLockSlice.ctns) > 0 {
 				if exemode == model.MemIntensive {
@@ -88,10 +91,10 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest, exemode mode
 					if res != nil {
 						break
 					}
+					logger.Warningf("No available ctn for %s", fn)
 				} else {
 					res = fallbackChooseCtn(rwLockSlice.ctns)
 					break
-
 				}
 			}
 		}
@@ -243,7 +246,7 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 	rpcDelay := (time.Now().UnixNano() - now) / 1e6
 	if err != nil {
 		r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
-		logger.Errorf("failed to create container on %s", node.address, err)
+		logger.Errorf("failed to create container on %s for %s", node.address, err, fn)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
 
