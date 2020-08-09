@@ -147,7 +147,7 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		}
 		if len(lockSlice.ctns) >= len(values) {
 			logger.Warningf("begin CreateNewCntFromNode for %s,%v", fn, finfo)
-			go r.CreateNewCntFromNode(req, 1.0)
+			go r.CreateNewCntFromOnDemandNode(req, 1.0)
 		}
 		for {
 			if len(lockSlice.ctns) > 0 {

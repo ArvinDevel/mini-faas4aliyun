@@ -275,14 +275,14 @@ func (r *Router) checkFn(fn string) {
 	if ratio > 1.2 && finfo.Exemode != model.MemIntensive && finfo.Exemode != model.CpuIntensive {
 		// todo check ctn parallel req, not all can solve by reduce parallel:transfer ctn from busy node
 		r.checkOutlierCtn(fn, float64(finfo.SumDurationInMs/finfo.Cnt))
-		//target := int(float64(parallelReqNum) / ratio)
-		//if target < 1 {
-		//	target = 1
-		//}
-		//if finfo.ReqThreshold != target {
-		//	logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
-		//	finfo.ReqThreshold = target
-		//}
+		target := int(float64(parallelReqNum) / ratio)
+		if target < 5 {
+			target = 5
+		}
+		if finfo.ReqThreshold != target {
+			logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
+			finfo.ReqThreshold = target
+		}
 	}
 }
 

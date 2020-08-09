@@ -102,7 +102,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		node := values[idx]
 		node.Lock()
 		// todo exclude memintensive fn 限制超卖上限
-		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
+		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -1000000000 {
 			node.availableMemInBytes -= memoryReq
 			node.Unlock()
 			return node, nil
