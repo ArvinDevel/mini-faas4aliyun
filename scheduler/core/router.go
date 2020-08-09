@@ -237,8 +237,10 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	container.Lock()
 	delete(container.requests, res.ID)
 	container.Unlock()
-	logger.Infof("ReturnContainer %d, %v, %v",
-		curentDuration, finfo, container)
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	logger.Infof("ReturnContainer %d, %v, %v, ctns size :%d",
+		curentDuration, finfo, container, len(ctnSlice.ctns))
 	r.requestMap.Remove(res.ID)
 	//todo release node&ctn when ctn is idle long for pericaolly program
 	// currently, don't release
