@@ -32,7 +32,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 }
 
 func (r *Router) Start() {
-	r.warmup(9)
+	r.warmup(10)
 	go r.UpdateStats()
 	go r.CalQps()
 	//go func() {

@@ -280,7 +280,7 @@ func (r *Router) checkFn(fn string) {
 			target = 5
 		}
 		if finfo.ReqThreshold != target {
-			logger.Warningf("fn %v time over 20%, reduce reqThreshold to %d", fn, target)
+			logger.Warningf("fn %v time over 20, reduce reqThreshold to %d", fn, target)
 			finfo.ReqThreshold = target
 		}
 	}
