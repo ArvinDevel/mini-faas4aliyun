@@ -52,7 +52,7 @@ const funTimeout = 60000
 
 var slack int64 = 5 * 1000 * 1000
 
-var gibyte float64 = 4 * 1024 * 1024 * 1024
+var gibyte float64 = 1024 * 1024 * 1024
 
 var mockStr = "mock-reqId/acctId"
 

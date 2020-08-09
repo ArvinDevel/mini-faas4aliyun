@@ -68,8 +68,8 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		// todo 如果存在误报，需要增加次数来避免
 		if ctn.CpuUsagePct > finfo.CpuThreshold {
 			if finfo.Exemode != model.CpuIntensive {
-				logger.Warningf("ctn %v use more cpu on %v, change %v to cpu intensive",
-					ctns[0], node, finfo)
+				logger.Warningf("%v use more cpu on %v, change %v to cpu intensive",
+					ctn, node, finfo)
 				if finfo.Exemode == model.MemIntensive {
 					logger.Warningf("fn %s is mem intensive, NOT change to cpu intensive",
 						ctn.fn)
@@ -137,10 +137,10 @@ func (r *Router) expand4MemIntensiveCtn(fn string, requireCnt int, cpuThreshod f
 func (r *Router) updateNodeInfo(fn string, cpuDelta float64, memDelta int64) {
 	for _, node := range values {
 		if v, ok := node.fn2Cnt.Get(fn); ok {
-			fnCnt := v.(int64)
+			fnCnt := v.(int)
 			node.Lock()
 			node.availableCpu += float64(fnCnt) * cpuDelta
-			node.availableMemInBytes += fnCnt * memDelta
+			node.availableMemInBytes += int64(fnCnt) * memDelta
 			node.Unlock()
 		}
 	}
