@@ -166,7 +166,7 @@ func (r *Router) addNewNodeAndCtnsAction(fn string) {
 			logger.Errorf("constructAcquireCtnReq when addNewNodeAndCtnsAction for %s", fn)
 			continue
 		}
-		ctn, err := r.CreateNewCntFromNode(req, 0.7)
+		ctn, err := r.createNewCntOnNode(req, 0.7, node)
 		if err == nil {
 			ctn.Lock()
 			delete(ctn.requests, req.RequestId)
@@ -177,19 +177,12 @@ func (r *Router) addNewNodeAndCtnsAction(fn string) {
 
 func (r *Router) boostCtnAction(fn string) {
 	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
-	ctn_ids := rwLockSlice.(*RwLockSlice)
+	lockSlice := rwLockSlice.(*RwLockSlice)
 	usedNodeIds := []string{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s when boostCtnAction", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
+	ctns := lockSlice.ctns
+	for _, container := range ctns {
 		usedNodeIds = append(usedNodeIds, container.nodeId)
 	}
-	ctn_ids.RUnlock()
 
 	for key := range r.nodeMap.Keys() {
 		noCtn := true

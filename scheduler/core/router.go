@@ -75,7 +75,9 @@ func (r *Router) AcquireContainer(ctx context.Context, req *pb.AcquireContainerR
 	fn := req.FunctionName
 	funChan <- fn
 	r.requestMap.Set(req.RequestId, fn)
-	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{})
+	r.fn2ctnSlice.SetIfAbsent(fn, &RwLockSlice{
+		ctns: make([]*ExtendedContainerInfo, 0, 15),
+	})
 	r.fn2finfoMap.SetIfAbsent(fn, &model.FuncInfo{
 		TimeoutInMs:       req.FunctionConfig.TimeoutInMs,
 		MemoryInBytes:     req.FunctionConfig.MemoryInBytes,
@@ -245,13 +247,13 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 }
 func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
 	// rm from fn2ctnSlice
-	ctns, _ := r.fn2ctnSlice.Get(fn)
-	ctnSlice := ctns.(*RwLockSlice)
-	ctn_ids := ctnSlice.ctns
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	ctns := ctnSlice.ctns
 
 	outerIdx := -1
-	for idx, val := range ctn_ids {
-		if ctnId == val {
+	for idx, val := range ctns {
+		if ctnId == val.id {
 			outerIdx = idx
 		}
 	}
@@ -259,8 +261,7 @@ func (r *Router) rmCtnFromFnMap(fn string, ctnId string) {
 		return
 	}
 	ctnSlice.Lock()
-	ctn_ids = ctns.(*RwLockSlice).ctns
-	ctnSlice.ctns = append(ctn_ids[:outerIdx], ctn_ids[outerIdx+1:]...)
+	ctnSlice.ctns = append(ctns[:outerIdx], ctns[outerIdx+1:]...)
 	ctnSlice.Unlock()
 }
 func (r *Router) releaseCtn(fn string, ctnId string) {

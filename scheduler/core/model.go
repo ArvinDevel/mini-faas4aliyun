@@ -41,7 +41,7 @@ type ExtendedContainerInfo struct {
 
 type RwLockSlice struct {
 	sync.RWMutex
-	ctns []string
+	ctns []*ExtendedContainerInfo
 }
 type Router struct {
 	nodeMap cmap.ConcurrentMap // instance_id -> ExtendedNodeInfo

@@ -79,17 +79,11 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 	// if not ok, panic
 	rwSlice, _ := r.fn2ctnSlice.Get(fn)
 
-	ctn_ids := rwSlice.(*RwLockSlice)
+	rwLockSlice := rwSlice.(*RwLockSlice)
 
-	ctns := []*ExtendedContainerInfo{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
+	ctns := rwLockSlice.ctns
+	for _, val := range ctns {
+		container := val
 		container.Lock()
 		if container.usable && len(container.requests) < 1 {
 			container.requests[req.RequestId] = 1
@@ -98,9 +92,7 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest) (*pb.Acquire
 			break
 		}
 		container.Unlock()
-		ctns = append(ctns, container)
 	}
-	ctn_ids.RUnlock()
 
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
@@ -131,21 +123,12 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	// if not ok, panic
 	rwLockSlice, _ := r.fn2ctnSlice.Get(fn)
 
-	ctn_ids := rwLockSlice.(*RwLockSlice)
+	lockSlice := rwLockSlice.(*RwLockSlice)
 
-	ctns := []*ExtendedContainerInfo{}
-	ctn_ids.RLock()
-	for _, val := range ctn_ids.ctns {
-		cmObj, ok := r.ctn2info.Get(val)
-		if (!ok) {
-			logger.Errorf("No ctn info found 4 ctn %s", val)
-			continue
-		}
-		container := cmObj.(*ExtendedContainerInfo)
-		ctns = append(ctns, container)
+	ctns := lockSlice.ctns
+	if len(ctns) > 0 {
+		sortCtnByMemUsage(ctns)
 	}
-	ctn_ids.RUnlock()
-	sortCtnByMemUsage(ctns)
 	for _, ctn := range ctns {
 		//if ctn.isCpuOrMemUsageHigh() {
 		//	continue
@@ -161,17 +144,17 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 	}
 	if res == nil { // if no idle container exists
 		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
-		ctn, err := r.CreateNewCntFromNode(req, 1.0)
-		if err != nil {
-			if len(ctns) > 0 {
-				res = fallbackChooseCtn(ctns)
-			} else {
-				return nil, err
+		r.createNewCntInEveryNode(req, 1.0)
+		for {
+			if len(lockSlice.ctns) > 0 {
+				res = fallbackChooseCtn(lockSlice.ctns)
+				break
 			}
-		} else {
-			res = ctn
 		}
 	}
+	res.Lock()
+	res.requests[req.RequestId] = 1
+	res.Unlock()
 	return &pb.AcquireContainerReply{
 		NodeId:          res.nodeId,
 		NodeAddress:     res.address,
@@ -179,22 +162,50 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		ContainerId:     res.id,
 	}, nil
 }
-
 func fallbackChooseCtn(ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
 	size := len(ctns)
 	idx := random.Intn(size)
 	return ctns[idx]
 }
 
-// if no idle container exists
-func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority float64) (*ExtendedContainerInfo, error) {
-	now := time.Now().UnixNano()
+func (r *Router) fallbackChooseCtn4MemIntensive(req string, ctns []*ExtendedContainerInfo) *ExtendedContainerInfo {
 	var res *ExtendedContainerInfo
 
+	for _, container := range ctns {
+		container.Lock()
+		if container.usable && len(container.requests) < 1 {
+			res = container
+			container.Unlock()
+			break
+		}
+		container.Unlock()
+	}
+	return res
+}
+
+// if no idle container exists
+func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority float64) (*ExtendedContainerInfo, error) {
 	node, err := r.getNode(req.AccountId, req.FunctionConfig.MemoryInBytes)
 	if err != nil {
 		return nil, err
 	}
+	fn := req.FunctionName
+	node.Lock()
+	if cnt, ok := node.fn2Cnt.Get(fn); ok {
+		node.fn2Cnt.Set(fn, cnt.(int)+1)
+	} else {
+		logger.Warningf("node %v still doesn't has ctn for %s", node, fn)
+		node.fn2Cnt.Set(fn, 1)
+	}
+	node.Unlock()
+
+	return r.createNewCntOnNode(req, priority, node)
+}
+
+func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority float64, node *ExtendedNodeInfo) (*ExtendedContainerInfo, error) {
+	now := time.Now().UnixNano()
+	fn := req.FunctionName
+	var res *ExtendedContainerInfo
 
 	node.Lock()
 	node.reqCnt += 1
@@ -202,9 +213,9 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	replyC, err := node.CreateContainer(ctx, &nsPb.CreateContainerRequest{
-		Name: req.FunctionName + uuid.NewV4().String(),
+		Name: fn + uuid.NewV4().String(),
 		FunctionMeta: &nsPb.FunctionMeta{
-			FunctionName:  req.FunctionName,
+			FunctionName:  fn,
 			Handler:       req.FunctionConfig.Handler,
 			TimeoutInMs:   funTimeout,
 			MemoryInBytes: req.FunctionConfig.MemoryInBytes,
@@ -229,23 +240,33 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 		port:             node.port,
 		nodeId:           node.nodeID,
 		requests:         make(map[string]int64),
-		fn:               req.FunctionName,
+		fn:               fn,
 		ReqMemoryInBytes: float64(req.FunctionConfig.MemoryInBytes),
 		usable:           true,
 		priority:         priority,
 	}
-	res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
+	//res.requests[req.RequestId] = 1 // The container hasn't been listed in the ctn_ids. So we don't need locking here.
 
-	ctns, _ := r.fn2ctnSlice.Get(req.FunctionName)
+	ctns, _ := r.fn2ctnSlice.Get(fn)
 	ctn_ids := ctns.(*RwLockSlice)
 	ctn_ids.Lock()
-	ctn_ids.ctns = append(ctn_ids.ctns, res.id)
+	ctn_ids.ctns = append(ctn_ids.ctns, res)
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)
-	logger.Infof("CreateNewCntFromNode for %s to %s,rpc lat %d, lat %d ",
-		req.FunctionName, node.address, rpcDelay, (time.Now().UnixNano()-now)/1e6)
+	logger.Infof("createNewCntFromNode for %s to %s,rpc lat %d, lat %d ",
+		fn, node.address, rpcDelay, (time.Now().UnixNano()-now)/1e6)
 	return res, nil
+}
+
+// acuire ctn in every node:only expand one ctn in one node
+func (r *Router) createNewCntInEveryNode(req *pb.AcquireContainerRequest, priority float64) {
+	fn := req.FunctionName
+	for _, node := range values {
+		if ok := node.fn2Cnt.SetIfAbsent(fn, 1); ok {
+			go r.createNewCntOnNode(req, priority, node)
+		}
+	}
 }
 
 func sortCtnByMemUsage(ctns []*ExtendedContainerInfo) {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/orcaman/concurrent-map"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -30,6 +31,7 @@ type ExtendedNodeInfo struct {
 	failedCnt int
 
 	reqCnt int
+	fn2Cnt cmap.ConcurrentMap
 }
 
 func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, error) {
@@ -45,6 +47,7 @@ func NewNode(nodeID, address string, port, memory int64) (*ExtendedNodeInfo, err
 		availableMemInBytes: memory,
 		conn:                conn,
 		NodeServiceClient:   pb.NewNodeServiceClient(conn),
+		fn2Cnt:              cmap.New(),
 	}, nil
 }
 
@@ -54,14 +57,15 @@ func (n *ExtendedNodeInfo) Close() {
 }
 
 func (node *ExtendedNodeInfo) String() string {
-	return fmt.Sprintf("Node [%s,%s ],mem:%f/%f,%d, %f, cpu:%f ,failed: %d ",
+	return fmt.Sprintf("Node [%s,%s ],mem:%f/%f,%d, %f, cpu:%f ,failed: %d, ctns: %v  ",
 		node.address, node.nodeID,
 		node.MemoryUsageInBytes, node.TotalMemoryInBytes, node.availableMemInBytes, node.AvailableMemoryInBytes, node.CpuUsagePct,
-		node.failedCnt)
+		node.failedCnt,
+		node.fn2Cnt.Items())
 }
 
 func (node *ExtendedNodeInfo) isCpuOrMemUsageHigh() bool {
-	if node.CpuUsagePct > nodeCpuHighThreshold {
+	if node.MemoryUsageInBytes/node.TotalMemoryInBytes > nodeMemHighThreshold {
 		return true
 	}
 	return false
