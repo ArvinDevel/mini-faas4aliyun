@@ -128,11 +128,11 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 			finfo.DenseCnt += 1
 			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
 				logger.Infof("change fn %s mode", fn)
-				if finfo.CallMode != model.Gray {
-					finfo.CallMode = model.Gray
-				} else {
-					finfo.CallMode = model.Dense
-				}
+				//if finfo.CallMode != model.Gray {
+				//	finfo.CallMode = model.Gray
+				//} else {
+				//}
+				finfo.CallMode = model.Dense
 				go r.boostCtnAction(fn)
 				go r.addNewNodeAndCtnsAction(fn)
 			}
