@@ -2,7 +2,6 @@ package core
 
 import (
 	"aliyun/serverless/mini-faas/scheduler/model"
-	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"sort"
 
@@ -23,7 +22,6 @@ func (r *Router) pickCntAccording2ExeMode(exeMode model.FuncExeMode, req *pb.Acq
 	case model.None:
 		return r.pickCnt4ResourceLess(req);
 	}
-	logger.Errorf("Unrecognized exeMode %s", exeMode)
 	return nil, errors.Errorf("Unrecognized exeMode %s", exeMode)
 }
 
@@ -46,8 +44,6 @@ func (r *Router) reduceReqMem(req *pb.AcquireContainerRequest) {
 		actualUsedMem := finfo.ActualUsedMemInBytes
 		if (actualUsedMem > 0 && actualUsedMem < finfo.MemoryInBytes) {
 			req.FunctionConfig.MemoryInBytes = actualUsedMem
-			logger.Infof("change req mem from %d to %d for fn %s",
-				finfo.MemoryInBytes, actualUsedMem, fn)
 		}
 	}
 }
@@ -80,7 +76,6 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest, exemode mode
 	}
 
 	if res == nil { // if no idle container exists
-		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
 		if exemode == model.MemIntensive {
 			go r.CreateNewCntFromNode(req, 1.0)
 		}
@@ -91,7 +86,6 @@ func (r *Router) pickCnt4SerialReq(req *pb.AcquireContainerRequest, exemode mode
 					if res != nil {
 						break
 					}
-					logger.Warningf("No available ctn for %s", fn)
 				} else {
 					res = fallbackChooseCtn(rwLockSlice.ctns)
 					break
@@ -141,12 +135,10 @@ func (r *Router) pickCnt4ParallelReq(req *pb.AcquireContainerRequest) (*pb.Acqui
 		ctn.Unlock()
 	}
 	if res == nil { // if no idle container exists
-		logger.Infof("%d ctns  can't provide for %s", len(ctns), fn)
 		if len(lockSlice.ctns) == 0 {
 			r.createNewCntInEveryNode(req, 1.0)
 		}
 		if len(lockSlice.ctns) >= len(values) {
-			logger.Warningf("begin CreateNewCntFromNode for %s,%v", fn, finfo)
 			go r.CreateNewCntFromNode(req, 1.0)
 		}
 		for {
@@ -199,7 +191,6 @@ func (r *Router) CreateNewCntFromNode(req *pb.AcquireContainerRequest, priority 
 	if cnt, ok := node.fn2Cnt.Get(fn); ok {
 		node.fn2Cnt.Set(fn, cnt.(int)+1)
 	} else {
-		logger.Warningf("node %v still doesn't has ctn for %s", node, fn)
 		node.fn2Cnt.Set(fn, 1)
 	}
 	node.Unlock()
@@ -218,7 +209,6 @@ func (r *Router) CreateNewCntFromOnDemandNode(req *pb.AcquireContainerRequest, p
 	if cnt, ok := node.fn2Cnt.Get(fn); ok {
 		node.fn2Cnt.Set(fn, cnt.(int)+1)
 	} else {
-		logger.Warningf("node %v still doesn't has ctn for %s", node, fn)
 		node.fn2Cnt.Set(fn, 1)
 	}
 	node.Unlock()
@@ -227,7 +217,6 @@ func (r *Router) CreateNewCntFromOnDemandNode(req *pb.AcquireContainerRequest, p
 }
 
 func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority float64, node *ExtendedNodeInfo) (*ExtendedContainerInfo, error) {
-	now := time.Now().UnixNano()
 	fn := req.FunctionName
 	var res *ExtendedContainerInfo
 
@@ -243,10 +232,8 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 		},
 		RequestId: req.RequestId,
 	})
-	rpcDelay := (time.Now().UnixNano() - now) / 1e6
 	if err != nil {
 		r.handleContainerErr(node, req.FunctionConfig.MemoryInBytes)
-		logger.Errorf("failed to create container on %s for %s", node.address, err, fn)
 		return nil, errors.Wrapf(err, "failed to create container on %s", node.address)
 	}
 
@@ -270,8 +257,6 @@ func (r *Router) createNewCntOnNode(req *pb.AcquireContainerRequest, priority fl
 	ctn_ids.Unlock()
 	r.ctn2info.Set(res.id, res)
 	r.cnt2node.Set(res.id, node)
-	logger.Infof("createNewCntOnNode for %s to %s,rpc lat %d, lat %d ",
-		fn, node.address, rpcDelay, (time.Now().UnixNano()-now)/1e6)
 	return res, nil
 }
 

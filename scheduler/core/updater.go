@@ -26,10 +26,10 @@ func (r *Router) UpdateStats() {
 func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	statsResp, error := node.GetStats(ctx, getStatsReq)
-	if (error != nil) {
+	statsResp, e := node.GetStats(ctx, getStatsReq)
+	if (e != nil) {
 		logger.Errorf("GetStats from %s %s fail due to %v",
-			node.nodeID, node.address, error)
+			node.nodeID, node.address, e)
 		return
 	}
 	nodeStat := statsResp.NodeStats
@@ -39,7 +39,6 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		node.TotalMemoryInBytes = float64(nodeStat.TotalMemoryInBytes)
 		node.Unlock()
 	}
-	// todo check whether need add lock
 	node.AvailableMemoryInBytes = float64(nodeStat.AvailableMemoryInBytes)
 	node.CpuUsagePct = nodeStat.CpuUsagePct
 	node.MemoryUsageInBytes = float64(nodeStat.MemoryUsageInBytes)
@@ -53,7 +52,6 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	for _, ctnStat := range ctnStatList {
 		ctnInfo, ok := r.ctn2info.Get(ctnStat.ContainerId)
 		if !ok {
-			//errors.Errorf("no container found with id %s", ctnStat.ContainerId)
 			continue
 		}
 		container := ctnInfo.(*ExtendedContainerInfo)
@@ -64,7 +62,6 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	for _, ctn := range ctns {
 		finfoObj, _ := r.fn2finfoMap.Get(ctn.fn)
 		finfo := finfoObj.(*model.FuncInfo)
-		// todo 如果存在误报，需要增加次数来避免
 		if ctn.CpuUsagePct > finfo.CpuThreshold {
 			if finfo.Exemode != model.CpuIntensive {
 				logger.Warningf("%v use more cpu on %v, change %v to cpu intensive",
@@ -78,9 +75,6 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 					r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
 				}
 			}
-			//else { // cause too much req
-			//	r.checkAndTrigerExpand(ctn.fn, finfo.Qps, finfo.CpuThreshold)
-			//}
 		}
 	}
 }
@@ -186,36 +180,6 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 				//}
 			}
 		}
-	}
-}
-
-func (r *Router) addNewNodeAndCtnsAction(fn string) {
-	logger.Infof("exe addNewNodeAndCtnsAction for %s ", fn)
-	var node *ExtendedNodeInfo
-	for
-	{
-		if n, err := r.remoteGetNode(staticAcctId); err == nil {
-			node = n
-			break
-		}
-		time.Sleep(time.Second * 30)
-	}
-	finfoObj, ok := r.fn2finfoMap.Get(fn)
-	if !ok {
-		logger.Errorf("no func info for the fn %s when addNewNodeAndCtnsAction", fn)
-		return
-	}
-	finfo := finfoObj.(*model.FuncInfo)
-
-	ctnSize := node.availableMemInBytes / finfo.MemoryInBytes
-
-	for i := int64(0); i < ctnSize; i++ {
-		req := r.constructAcquireCtnReq(fn)
-		if req == nil {
-			logger.Errorf("constructAcquireCtnReq when addNewNodeAndCtnsAction for %s", fn)
-			continue
-		}
-		r.createNewCntOnNode(req, 0.7, node)
 	}
 }
 
