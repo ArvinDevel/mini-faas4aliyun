@@ -146,7 +146,9 @@ func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cp
 func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
 	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelR()
-	replyRn, err := r.rmClient.ReserveNode(ctxR, &rmPb.ReserveNodeRequest{})
+	replyRn, err := r.rmClient.ReserveNode(ctxR, &rmPb.ReserveNodeRequest{
+		AccountId: accountId,
+	})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
