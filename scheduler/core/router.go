@@ -28,7 +28,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 
 // sth used to prepare before task
 func (r *Router) Start() {
-	r.warmup(10)
+	r.warmup(9)
 	go r.UpdateStats()
 	go r.CalQps()
 	go func() {
@@ -46,7 +46,7 @@ func (r *Router) warmup(num int) {
 	acctId := staticAcctId
 	for i := 0; i < num; i++ {
 		go func() {
-			time.Sleep(40 * time.Second)
+			time.Sleep(41 * time.Second)
 			_, err := r.remoteGetNode(acctId)
 			if err != nil {
 				time.Sleep(30 * time.Second)
@@ -82,12 +82,10 @@ var values = []*ExtendedNodeInfo{}
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	length := len(values)
-	// todo best fit
 	for i := 0; i < length; i++ {
 		idx := random.Intn(length)
 		node := values[idx]
 		node.Lock()
-		// todo exclude memintensive fn 限制超卖上限
 		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
 			node.availableMemInBytes -= memoryReq
 			node.Unlock()
@@ -100,15 +98,9 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		}
 		node.Unlock()
 	}
-	// only used for local
-	if accountId != staticAcctId {
-		staticAcctId = accountId
-		r.remoteGetNode(accountId)
-		r.warmup(8)
-	}
-	if len(values) < 15 {
-		go r.remoteGetNode(staticAcctId)
-	}
+
+	go r.remoteGetNode(staticAcctId)
+
 	if len(values) > 0 {
 		return r.fallbackUseLocalNode()
 	}

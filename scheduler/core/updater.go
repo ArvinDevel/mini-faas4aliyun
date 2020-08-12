@@ -263,7 +263,7 @@ func (r *Router) markCtnUnusedAndAcquireNewOne(toDeletedCtn *ExtendedContainerIn
 	}()
 	req := r.constructAcquireCtnReq(fn)
 	// todo adjustment priority and use diff strategy for diff fn type
-	r.CreateNewCntFromOnDemandNode(req, 1.0)
+	r.CreateNewCntFromOnDemandNode(req, 0.8)
 }
 func (r *Router) ctnReplicaNum4Fn(fn string) int {
 	ctns, _ := r.fn2ctnSlice.Get(fn)
