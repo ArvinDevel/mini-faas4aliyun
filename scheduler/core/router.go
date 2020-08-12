@@ -117,7 +117,7 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 
 func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cpuThreshod float64) (*ExtendedNodeInfo, error) {
 	sort.Slice(values, func(i, j int) bool {
-		return values[i].availableCpu > values[j].availableCpu
+		return values[i].CpuUsagePct < values[j].CpuUsagePct
 	})
 	for _, node := range values {
 		if node.availableCpu < cpuThreshod {
@@ -134,7 +134,7 @@ func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cp
 		node.Unlock()
 	}
 
-	if len(values) < 18 {
+	if len(values) < 12 {
 		node, err := r.remoteGetNode(staticAcctId)
 		if err == nil {
 			return node, nil
