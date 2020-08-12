@@ -27,7 +27,7 @@ func NewRouter(rmClient rmPb.ResourceManagerClient) *Router {
 
 // sth used to prepare before task
 func (r *Router) Start() {
-	r.warmup(11)
+	r.warmup(10)
 	go r.UpdateStats()
 	go r.CalQps()
 	go func() {
