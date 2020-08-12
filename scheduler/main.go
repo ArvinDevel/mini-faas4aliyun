@@ -43,7 +43,6 @@ func main() {
 
 	hostName, err := env.GetHostName()
 	if err != nil {
-		logger.Errorf("Failed to get host name due to %s", err)
 		return
 	}
 
@@ -53,14 +52,12 @@ func main() {
 
 	err = env.ViperConfig(global.ModuleName, *configFile)
 	if err != nil {
-		logger.Criticalf("Failed to viper config for Scheduler in config file %s due to %s", *configFile, err)
 		panic(err)
 	}
 
 	var config cp.Config
 	err = viper.Unmarshal(&config)
 	if err != nil {
-		logger.Criticalf("Failed to decode viper config, %v", err)
 		panic(err)
 	}
 	cp.Global = &config
@@ -75,16 +72,14 @@ func main() {
 	if rmEndpoint == "" {
 		panic("environment variable RESOURCE_MANAGER_ENDPOINT is not set")
 	}
-	logger.Infof("Creating resource manager client with endpoint %s", rmEndpoint)
 
 	conn, err := grpc.Dial(rmEndpoint, grpc.WithInsecure())
 	if err != nil {
-		logger.Criticalf("Failed to contact resource manager due to %s", err)
 		panic(err)
 	}
 	rm := rmPb.NewResourceManagerClient(conn)
 
-	router := core.NewRouter(&config, rm)
+	router := core.NewRouter(rm)
 	s := server.NewServer(router)
 	s.Start()
 
@@ -102,7 +97,6 @@ func main() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", servicePort))
 	if err != nil {
-		logger.Criticalf("Failed to listen on port %d: %v", servicePort, err)
 		return
 	}
 
@@ -110,8 +104,6 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		logger.Infof("Scheduler gRPC server gracefully stopping ...")
 		svr.GracefulStop()
-		logger.Infof("Scheduler gRPC server gracefully stopped.")
 	}
 }

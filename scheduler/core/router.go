@@ -7,14 +7,13 @@ import (
 
 	nspb "aliyun/serverless/mini-faas/nodeservice/proto"
 	rmPb "aliyun/serverless/mini-faas/resourcemanager/proto"
-	cp "aliyun/serverless/mini-faas/scheduler/config"
 	"aliyun/serverless/mini-faas/scheduler/model"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
 	"github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
 )
 
-func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
+func NewRouter(rmClient rmPb.ResourceManagerClient) *Router {
 	return &Router{
 		nodeMap:     cmap.New(),
 		fn2finfoMap: cmap.New(),
@@ -134,11 +133,9 @@ func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cp
 		node.Unlock()
 	}
 
-	if len(values) < 18 {
-		node, err := r.remoteGetNode(staticAcctId)
-		if err == nil {
-			return node, nil
-		}
+	node, err := r.remoteGetNode(staticAcctId)
+	if err == nil {
+		return node, nil
 	}
 	sort.Slice(values, func(i, j int) bool {
 		return values[i].availableCpu > values[j].availableCpu
@@ -147,11 +144,9 @@ func (r *Router) getNodeWithMemAndCpuCheck(accountId string, memoryReq int64, cp
 }
 
 func (r *Router) remoteGetNode(accountId string) (*ExtendedNodeInfo, error) {
-	ctxR, cancelR := context.WithTimeout(context.Background(), 30*time.Second)
+	ctxR, cancelR := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelR()
-	replyRn, err := r.rmClient.ReserveNode(ctxR, &rmPb.ReserveNodeRequest{
-		AccountId: accountId,
-	})
+	replyRn, err := r.rmClient.ReserveNode(ctxR, &rmPb.ReserveNodeRequest{})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

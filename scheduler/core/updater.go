@@ -148,9 +148,6 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
 				finfo.CallMode = model.Dense
 				go r.boostCtnAction(fn)
-				//if finfo.Exemode != model.CpuIntensive {
-				//	go r.addNewNodeAndCtnsAction(fn)
-				//}
 			}
 		}
 	}
@@ -208,7 +205,7 @@ func (r *Router) checkFn(fn string) {
 		return
 	}
 	ratio := float64(finfo.SumDurationInMs/finfo.Cnt) / float64(finfo.MinDurationInMs)
-	if ratio > 1.2 && finfo.Exemode != model.MemIntensive && finfo.Exemode != model.CpuIntensive {
+	if ratio > 1.2 {
 		// todo check ctn parallel req, not all can solve by reduce parallel:transfer ctn from busy node
 		r.checkOutlierCtn(fn, float64(finfo.SumDurationInMs/finfo.Cnt))
 		//target := int(float64(parallelReqNum) / ratio)
@@ -237,7 +234,7 @@ func (r *Router) checkOutlierCtn(fn string, avgDuration float64) {
 		}
 		avgUsages = append(avgUsages, ctnAvgDuration)
 	}
-	if max/avgDuration > 2.0 {
+	if max/avgDuration > 1.5 {
 		r.markCtnUnusedAndAcquireNewOne(ctns[idx], fn)
 	}
 }
