@@ -68,7 +68,7 @@ var releaseResourcesDuration = time.Duration(time.Second * 3)
 
 var ctnCpuHighThreshold = 0.5
 var ctnMemHighThreshold = 0.6
-var parallelReqNum = 15
+var parallelReqNum = 20
 
 var nodeCpuHighThreshold = 150.0
 var nodeMemHighThreshold = 0.75
