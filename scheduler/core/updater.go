@@ -3,6 +3,7 @@ package core
 import (
 	"aliyun/serverless/mini-faas/scheduler/model"
 	pb "aliyun/serverless/mini-faas/scheduler/proto"
+	"aliyun/serverless/mini-faas/scheduler/utils/logger"
 	"context"
 	"github.com/satori/go.uuid"
 	"time"
@@ -26,12 +27,14 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	statsResp, e := node.GetStats(ctx, getStatsReq)
-	if (e != nil) {
+	if e != nil {
+		logger.Errorf("GetStats from %s %s fail due to %v",
+			node.nodeID, node.address, e)
 		return
 	}
 	nodeStat := statsResp.NodeStats
 	ctnStatList := statsResp.ContainerStatsList
-	if (node.TotalMemoryInBytes == 0) {
+	if node.TotalMemoryInBytes == 0 {
 		node.Lock()
 		node.TotalMemoryInBytes = float64(nodeStat.TotalMemoryInBytes)
 		node.Unlock()
@@ -40,6 +43,10 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 	node.CpuUsagePct = nodeStat.CpuUsagePct
 	node.MemoryUsageInBytes = float64(nodeStat.MemoryUsageInBytes)
 	node.ctnCnt = len(ctnStatList)
+
+	if node.isCpuOrMemUsageHigh() {
+		logger.Warningf(" %v mem high", node)
+	}
 
 	ctns := []*ExtendedContainerInfo{}
 	for _, ctnStat := range ctnStatList {
@@ -57,7 +64,11 @@ func (r *Router) UpdateSignleNode(node *ExtendedNodeInfo) {
 		finfo := finfoObj.(*model.FuncInfo)
 		if ctn.CpuUsagePct > finfo.CpuThreshold {
 			if finfo.Exemode != model.CpuIntensive {
+				logger.Warningf("%v use more cpu on %v, change %v to cpu intensive",
+					ctn, node, finfo)
 				if finfo.Exemode == model.MemIntensive {
+					logger.Warningf("fn %s is mem intensive, NOT change to cpu intensive",
+						ctn.fn)
 				} else {
 					finfo.Exemode = model.CpuIntensive
 					r.updateNodeInfo(ctn.fn, -finfo.CpuThreshold-2.0, finfo.MemoryInBytes-finfo.ActualUsedMemInBytes)
@@ -76,6 +87,8 @@ func (r *Router) checkAndTrigerExpand(fn string, qps int, cpuThreshold float64) 
 	for _, ctn := range ctnSlice.ctns {
 		avtiveReq := len(ctn.requests)
 		if avtiveReq > max {
+			logger.Warningf("active req %d for %s large than ori max %d qps %d",
+				avtiveReq, fn, max, qps)
 			max = avtiveReq
 		}
 	}
@@ -85,15 +98,20 @@ func (r *Router) checkAndTrigerExpand(fn string, qps int, cpuThreshold float64) 
 }
 
 func (r *Router) expand4MemIntensiveCtn(fn string, requireCnt int, cpuThreshod float64) {
+	logger.Infof("begin expand4MemIntensiveCtn for %s, %d", fn, requireCnt)
 
 	failedCnt := 0
 	req := r.constructAcquireCtnReq(fn)
 	for i := 0; i < requireCnt; i++ {
 		node, _ := r.getNodeWithMemAndCpuCheck(staticAcctId, req.FunctionConfig.MemoryInBytes, cpuThreshod)
-		if _, err := r.createNewCntOnNode(req, 1.0, node);
-			err != nil {
-			failedCnt++;
+		if _, err := r.createNewCntOnNode(req, 1.0, node); err != nil {
+			failedCnt++
 		}
+	}
+	// todo add more again
+	if failedCnt > 0 {
+		logger.Warningf("expand failed %d requried %d for fn %s",
+			failedCnt, requireCnt, fn)
 	}
 }
 
@@ -128,6 +146,7 @@ func (r *Router) CalQps() {
 				fn2cnt[fn] = 1
 			}
 		}
+		logger.Infof("fn qps %v", fn2cnt)
 		r.updateFinfo(fn2cnt)
 		for k := range fn2cnt {
 			delete(fn2cnt, k)
@@ -139,13 +158,20 @@ func (r *Router) updateFinfo(fn2cnt map[string]int) {
 	for fn, cnt := range fn2cnt {
 		r.checkFn(fn)
 		if cnt > reqQpsThreshold {
-			finfoObj, _ := r.fn2finfoMap.Get(fn)
+			finfoObj, ok := r.fn2finfoMap.Get(fn)
+			if !ok {
+				logger.Errorf("no func info for the fn %s when updateFinfo", fn)
+				continue
+			}
 			finfo := finfoObj.(*model.FuncInfo)
 			if finfo.Qps < cnt {
+				logger.Infof("update %s qps from %d to %d", fn, finfo.Qps, cnt)
 				finfo.Qps = cnt
 			}
 			finfo.DenseCnt += 1
 			if finfo.CallMode != model.Dense && finfo.DenseCnt > reqOverThresholdNum {
+				logger.Infof("change fn %s mode from %v to %v",
+					fn, finfo.CallMode, model.Dense)
 				finfo.CallMode = model.Dense
 				go r.boostCtnAction(fn)
 				//if finfo.Exemode != model.CpuIntensive {
@@ -178,6 +204,7 @@ func (r *Router) boostCtnAction(fn string) {
 			if req == nil {
 				continue
 			}
+			logger.Infof("begin add one ctn for fn %s", fn)
 			// todo fix bug:specify node
 			r.CreateNewCntFromNode(req, 1.0)
 		}
@@ -238,33 +265,54 @@ func (r *Router) checkOutlierCtn(fn string, avgDuration float64) {
 		avgUsages = append(avgUsages, ctnAvgDuration)
 	}
 	if max/avgDuration > 2.0 {
-		r.markCtnUnusedAndAcquireNewOne(ctns[idx], fn)
+		// todo disable ctn and re aquire one
+		logger.Warningf(" %v  %f of  avg for %s duration ",
+			ctns[idx], max/avgDuration, fn)
+
 	}
 }
 
-func (r *Router) markCtnUnusedAndAcquireNewOne(toDeletedCtn *ExtendedContainerInfo, fn string) {
-	toDeletedCtn.Lock()
-	if toDeletedCtn.usable {
-		toDeletedCtn.usable = false
-		toDeletedCtn.Unlock()
-	} else {
-		toDeletedCtn.Unlock()
-		return
+func (r *Router) releaseUnusedCtnAndAcuireNewOne(fn string) {
+	rw, _ := r.fn2ctnSlice.Get(fn)
+	ctnSlice := rw.(*RwLockSlice)
+	currentCtnSize := len(ctnSlice.ctns)
+	finfoObj, _ := r.fn2finfoMap.Get(fn)
+	finfo := finfoObj.(*model.FuncInfo)
+	qps := finfo.Qps
+	if currentCtnSize < qps {
+		logger.Infof("todo check whether need re-aquire ctn")
 	}
-	go func() {
-		for {
-			if len(toDeletedCtn.requests) > 0 {
-				time.Sleep(2 * time.Second)
-			} else {
-				r.releaseCtn(toDeletedCtn.fn, toDeletedCtn.id)
-				break
+}
+
+func (r *Router) ReleaseCtnResource() {
+	// release unused ctn async predicolly:only keep one replica
+	// NOT APPLYED for mem intensive:
+	ticker := time.NewTicker(releaseResourcesDuration)
+	defer ticker.Stop()
+	for {
+		<-ticker.C
+		for _, key := range r.ctn2info.Keys() {
+			ctnInfo, _ := r.ctn2info.Get(key)
+			container := ctnInfo.(*ExtendedContainerInfo)
+			fn := container.fn
+			// consider fn container replica, todo consider fun frequency and duration
+			if r.ctnReplicaNum4Fn(fn) < 2 {
+				continue
+			}
+			container.Lock()
+			if len(container.requests) == 0 {
+				// after set this, we can safetly release it
+				container.usable = false
+			}
+			container.Unlock()
+			if !container.usable {
+				logger.Infof("begin release %s", container)
+				r.releaseCtn(container.fn, container.id)
 			}
 		}
-	}()
-	req := r.constructAcquireCtnReq(fn)
-	// todo adjustment priority and use diff strategy for diff fn type
-	r.CreateNewCntFromOnDemandNode(req, 0.8)
+	}
 }
+
 func (r *Router) ctnReplicaNum4Fn(fn string) int {
 	ctns, _ := r.fn2ctnSlice.Get(fn)
 	ctnSlice := ctns.(*RwLockSlice)

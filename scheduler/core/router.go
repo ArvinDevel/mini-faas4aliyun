@@ -28,7 +28,7 @@ func NewRouter(config *cp.Config, rmClient rmPb.ResourceManagerClient) *Router {
 
 // sth used to prepare before task
 func (r *Router) Start() {
-	r.warmup(9)
+	r.warmup(15)
 	go r.UpdateStats()
 	go r.CalQps()
 	go func() {
@@ -46,7 +46,7 @@ func (r *Router) warmup(num int) {
 	acctId := staticAcctId
 	for i := 0; i < num; i++ {
 		go func() {
-			time.Sleep(41 * time.Second)
+			time.Sleep(40 * time.Second)
 			_, err := r.remoteGetNode(acctId)
 			if err != nil {
 				time.Sleep(30 * time.Second)
@@ -82,10 +82,12 @@ var values = []*ExtendedNodeInfo{}
 
 func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, error) {
 	length := len(values)
+	// todo best fit
 	for i := 0; i < length; i++ {
 		idx := random.Intn(length)
 		node := values[idx]
 		node.Lock()
+		// todo exclude memintensive fn 限制超卖上限
 		if node.AvailableMemoryInBytes > 2*float64(memoryReq) && node.availableMemInBytes > -2000000000 {
 			node.availableMemInBytes -= memoryReq
 			node.Unlock()
@@ -98,9 +100,15 @@ func (r *Router) getNode(accountId string, memoryReq int64) (*ExtendedNodeInfo, 
 		}
 		node.Unlock()
 	}
-
-	go r.remoteGetNode(staticAcctId)
-
+	// only used for local
+	if accountId != staticAcctId {
+		staticAcctId = accountId
+		r.remoteGetNode(accountId)
+		r.warmup(8)
+	}
+	if len(values) < 15 {
+		go r.remoteGetNode(staticAcctId)
+	}
 	if len(values) > 0 {
 		return r.fallbackUseLocalNode()
 	}
@@ -196,7 +204,7 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 		return errors.Errorf("no request found with id %s", res.ID)
 	}
 	fn := rmObj.(string)
-	if (res.ErrorCode != "" || res.ErrorMessage != "") {
+	if res.ErrorCode != "" || res.ErrorMessage != "" {
 		r.releaseCtn(fn, res.ContainerId)
 		return nil
 	}
@@ -209,11 +217,11 @@ func (r *Router) returnContainer(res *model.ResponseInfo) error {
 	curentDuration := res.DurationInMs
 	curentMaxMem := res.MaxMemoryUsageInBytes
 
-	if (curentDuration > finfo.MaxDurationInMs) {
+	if curentDuration > finfo.MaxDurationInMs {
 		finfo.MaxDurationInMs = curentDuration
 	}
 
-	if (curentMaxMem > finfo.MaxMemoryUsageInBytes) {
+	if curentMaxMem > finfo.MaxMemoryUsageInBytes {
 		finfo.MaxMemoryUsageInBytes = curentMaxMem
 		finfo.ActualUsedMemInBytes = curentMaxMem + slack
 	}
@@ -273,7 +281,7 @@ func (r *Router) releaseCtn(fn string, ctnId string) {
 
 func (r *Router) remoteReleaseCtn(ctnId string) {
 	nodeWrapper, ok := r.cnt2node.Get(ctnId)
-	if (!ok) {
+	if !ok {
 		return
 	}
 	// rm cnt2node
